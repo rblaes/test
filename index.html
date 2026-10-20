@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blockout 3D</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="game-shell">
+      <aside class="hud">
+        <h1>Blockout 3D</h1>
+
+        <div class="stat-row">
+          <span>Score</span>
+          <strong id="score">0</strong>
+        </div>
+
+        <div class="stat-row">
+          <span>Lines</span>
+          <strong id="lines">0</strong>
+        </div>
+
+        <div class="stat-row">
+          <span>Level</span>
+          <strong id="level">1</strong>
+        </div>
+
+        <div class="stat-row">
+          <span>Status</span>
+          <strong id="status">Running</strong>
+        </div>
+
+        <div class="controls-box">
+          <h2>Controls</h2>
+          <ul>
+            <li>A / D: move left / right</li>
+            <li>Q / E: move backward / forward</li>
+            <li>S / ↓: soft drop</li>
+            <li>R: rotate Y</li>
+            <li>F: rotate X</li>
+            <li>Space: hard drop</li>
+            <li>P: pause</li>
+          </ul>
+        </div>
+
+        <div class="button-row">
+          <button id="pauseButton" type="button">Pause</button>
+          <button id="restartButton" type="button">Restart</button>
+        </div>
+      </aside>
+
+      <div class="viewport-wrap">
+        <canvas id="gameCanvas"></canvas>
+      </div>
+    </div>
+
+    <script type="module" src="./game.js"></script>
+  </body>
+</html>
