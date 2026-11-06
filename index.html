@@ -19,12 +19,15 @@
       <section id="overlay" class="overlay" aria-live="polite">
         <p class="eyebrow">A THREE-DIMENSIONAL NIGHT RUN</p>
         <h1 id="overlay-title">KEEP THE<br /><em>BLUES</em> MOVING</h1>
-        <p id="overlay-copy">A long drive, a late show, and a city full of roadblocks. Jump the barricades and collect the golden records.</p>
+        <p id="overlay-copy">A long drive, a late show, and a city full of roadblocks. Jump the barricades, duck beneath low signs, and collect golden records.</p>
         <button id="start-button" type="button">START THE RUN <span>→</span></button>
-        <p class="controls-note">SPACE / ↑ / W TO JUMP <i>•</i> TAP TO JUMP</p>
+        <p class="controls-note">SPACE / ↑ / W: JUMP <i>•</i> ↓ / S / SHIFT: DUCK</p>
       </section>
       <div class="bottom-note" aria-hidden="true">CHICAGO AFTER DARK <span>✦</span> KEEP THE BEAT ALIVE</div>
-      <button id="jump-button" type="button" aria-label="Jump">JUMP</button>
+      <div class="touch-controls" aria-label="Touch controls">
+        <button id="duck-button" type="button" aria-label="Hold to duck">DUCK</button>
+        <button id="jump-button" type="button" aria-label="Jump">JUMP</button>
+      </div>
       <div id="toast" role="status" aria-live="polite"></div>
     </main>
     <script type="module" src="./script.js"></script>

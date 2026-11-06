@@ -8,40 +8,43 @@
 }
 html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #07111e; }
 body { color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
-#game { position: relative; width: 100%; height: 100%; min-height: 420px; overflow: hidden; background: #07111e; }
+#game { position: relative; width: 100%; height: 100%; min-height: 420px; overflow: hidden; background: radial-gradient(ellipse at 68% 22%, #192b44 0, #0b1727 42%, #07111e 78%); }
+#game::after { position: absolute; z-index: 1; inset: 0; content: ""; pointer-events: none; background: linear-gradient(180deg, rgba(5, 12, 22, .18), transparent 25%, transparent 70%, rgba(3, 8, 14, .32)), radial-gradient(ellipse at center, transparent 48%, rgba(1, 5, 10, .45) 100%); }
 #game canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #hud { position: absolute; z-index: 2; top: 26px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
-.hud-card { min-width: 103px; padding: 9px 16px 10px; border: 1px solid rgba(244, 224, 193, .2); background: rgba(7, 17, 30, .68); backdrop-filter: blur(10px); text-align: center; }
+.hud-card { min-width: 103px; padding: 9px 16px 10px; border: 1px solid rgba(244, 224, 193, .2); background: rgba(7, 17, 30, .68); backdrop-filter: blur(10px); text-align: center; box-shadow: 0 7px 25px rgba(0, 0, 0, .22); }
 .hud-card span { display: block; margin-bottom: 3px; color: var(--muted); font-size: .62rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
 .hud-card strong { font-size: 1.18rem; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
-.brand { position: absolute; top: 28px; left: 32px; z-index: 2; display: flex; align-items: center; gap: 9px; color: #eee5d6; font-size: .67rem; font-weight: 800; line-height: 1.15; letter-spacing: .16em; }
+.brand { position: absolute; top: 28px; left: 32px; z-index: 2; display: flex; align-items: center; gap: 9px; color: #eee5d6; font-size: .67rem; font-weight: 800; line-height: 1.15; letter-spacing: .16em; text-shadow: 0 2px 12px #000; }
 .brand-mark { color: var(--gold); font-size: 1.8rem; }
-.overlay { position: absolute; z-index: 3; top: 50%; left: 50%; width: min(490px, calc(100% - 34px)); transform: translate(-50%, -47%); padding: 36px 42px 32px; border: 1px solid rgba(243, 187, 98, .36); background: linear-gradient(145deg, rgba(10, 21, 34, .94), rgba(11, 17, 28, .84)); box-shadow: 0 24px 90px rgba(0, 0, 0, .45); text-align: center; transition: opacity .25s, visibility .25s; }
+.overlay { position: absolute; z-index: 3; top: 50%; left: 50%; width: min(490px, calc(100% - 34px)); transform: translate(-50%, -47%); padding: 36px 42px 32px; border: 1px solid rgba(243, 187, 98, .42); background: linear-gradient(145deg, rgba(10, 21, 34, .94), rgba(11, 17, 28, .84)); box-shadow: 0 24px 90px rgba(0, 0, 0, .45), inset 0 0 36px rgba(243, 187, 98, .045); text-align: center; transition: opacity .25s, visibility .25s; backdrop-filter: blur(12px); }
 .overlay.hidden { visibility: hidden; opacity: 0; pointer-events: none; }
 .eyebrow { margin: 0 0 16px; color: var(--gold); font-size: .65rem; font-weight: 800; letter-spacing: .23em; }
-h1 { margin: 0; font-size: clamp(2.7rem, 8vw, 4.8rem); font-weight: 900; line-height: .88; letter-spacing: -.055em; }
+h1 { margin: 0; font-size: clamp(2.7rem, 8vw, 4.8rem); font-weight: 900; line-height: .88; letter-spacing: -.055em; text-shadow: 0 5px 25px rgba(0, 0, 0, .32); }
 h1 em { color: var(--gold); font-style: normal; }
 #overlay-copy { max-width: 350px; margin: 21px auto 24px; color: #c1cbd5; font-size: .9rem; line-height: 1.6; }
 #start-button { min-width: 210px; padding: 14px 18px; border: 0; background: var(--gold); color: #17130e; cursor: pointer; font: inherit; font-size: .75rem; font-weight: 900; letter-spacing: .12em; transition: background .2s, transform .2s; }
 #start-button:hover { transform: translateY(-2px); background: #ffd58c; }
 #start-button span { margin-left: 12px; font-size: 1.1rem; }
-.controls-note { margin: 21px 0 0; color: #8995a2; font-size: .61rem; font-weight: 700; letter-spacing: .13em; }
+.controls-note { margin: 21px 0 0; color: #a2adba; font-size: .61rem; font-weight: 700; letter-spacing: .11em; }
 .controls-note i { padding: 0 7px; color: var(--gold); font-style: normal; }
 .bottom-note { position: absolute; bottom: 22px; left: 50%; z-index: 2; transform: translateX(-50%); color: rgba(238, 229, 214, .66); white-space: nowrap; font-size: .59rem; font-weight: 700; letter-spacing: .2em; }
 .bottom-note span { padding: 0 9px; color: var(--gold); }
-#jump-button { display: none; position: absolute; z-index: 4; right: 22px; bottom: 24px; width: 76px; height: 76px; border: 1px solid rgba(243, 187, 98, .72); border-radius: 50%; background: rgba(13, 25, 39, .75); color: var(--gold); font: inherit; font-size: .67rem; font-weight: 900; letter-spacing: .1em; touch-action: manipulation; }
+.touch-controls { display: none; position: absolute; z-index: 4; right: 20px; bottom: 22px; gap: 10px; }
+.touch-controls button { width: 72px; height: 72px; border: 1px solid rgba(243, 187, 98, .72); border-radius: 50%; background: rgba(13, 25, 39, .82); color: var(--gold); font: inherit; font-size: .65rem; font-weight: 900; letter-spacing: .1em; touch-action: none; user-select: none; box-shadow: 0 4px 18px rgba(0, 0, 0, .35); }
+.touch-controls button:active, .touch-controls button.active { background: rgba(243, 187, 98, .3); color: #fff2d6; transform: scale(.96); }
 #toast { position: absolute; z-index: 2; top: 105px; left: 50%; transform: translate(-50%, -8px); opacity: 0; color: var(--gold); font-size: .78rem; font-weight: 900; letter-spacing: .13em; transition: opacity .2s, transform .2s; pointer-events: none; }
 #toast.visible { transform: translate(-50%, 0); opacity: 1; }
 @media (max-width: 680px) {
   #hud { top: 18px; gap: 6px; }
-  .hud-card { min-width: 73px; padding: 8px 8px; }
+  .hud-card { min-width: 73px; padding: 8px; }
   .hud-card span { font-size: .52rem; }
   .hud-card strong { font-size: 1rem; }
   .brand { top: 21px; left: 12px; font-size: .55rem; gap: 5px; }
   .brand-mark { font-size: 1.45rem; }
   .best { display: none; }
   .overlay { padding: 30px 21px 26px; }
-  #jump-button { display: block; }
+  .touch-controls { display: flex; }
   .bottom-note { bottom: 18px; left: 18px; transform: none; font-size: .5rem; letter-spacing: .12em; }
   .bottom-note span { padding: 0 4px; }
 }

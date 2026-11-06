@@ -1,6 +1,6 @@
 # Midnight Rhythm — 3D Runner
 
-A small, original Three.js endless side-scroller with a late-night blues-band atmosphere. Guide a blue-suited musician through a city after dark, leap over roadblocks, and collect golden records. The characters and scenery are built from Three.js geometry; there are no image, font, or audio assets to download.
+An original Three.js endless side-scroller with a late-night blues-band atmosphere. Guide a blue-suited musician through a city after dark, leap over roadblocks, duck beneath low signs, and collect golden records. The characters and scenery are built from Three.js geometry; there are no image, font, or audio assets to download.
 
 ## Run
 
@@ -14,9 +14,10 @@ Then visit <http://localhost:8000>.
 
 ## Controls
 
-- **Space**, **Up arrow**, or **W**: jump
-- **Tap/click** the play area or **JUMP** button: jump
-- Collect golden records for bonus points; avoid the barricades and cones.
+- **Space**, **Up arrow**, or **W**: jump over barricades and cones
+- **Down arrow**, **S**, or **Shift**: hold to duck beneath low overhead signs
+- On touch screens, hold **DUCK** to crouch and tap **JUMP** to leap
+- Collect golden records for bonus points; avoid colliding with obstacles.
 
 ## Offline note
 

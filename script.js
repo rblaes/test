@@ -41,6 +41,7 @@ const materials = {
   white: mat(0xf1e8d8), red: mat(0xc9443b), concrete: mat(0x666d77), window: mat(0x172d43, 0.35, 0.2),
   glow: new THREE.MeshStandardMaterial({ color: 0xf6bd60, emissive: 0x9c5015, emissiveIntensity: 1.4 }),
   record: new THREE.MeshStandardMaterial({ color: 0xd8a64d, metalness: 0.55, roughness: 0.3, emissive: 0x4c2608 }),
+  lamp: new THREE.MeshStandardMaterial({ color: 0xffd28a, emissive: 0xff9f38, emissiveIntensity: 2.2 }),
 };
 
 function box(parent, width, height, depth, material, x, y, z = 0) {
@@ -56,7 +57,20 @@ function cylinder(parent, radiusTop, radiusBottom, height, material, x, y, z = 0
   return mesh;
 }
 
-// Road and repeating lane markers give the scene its endless forward motion.
+// A glowing moon, hazy rings and a sparse star field add depth to the night sky.
+const moon = new THREE.Mesh(new THREE.SphereGeometry(1.05, 32, 24), new THREE.MeshBasicMaterial({ color: 0xffdca1 }));
+moon.position.set(7.4, 8.35, -10);
+scene.add(moon);
+const moonHalo = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.035, 8, 64), new THREE.MeshBasicMaterial({ color: 0xe9a75b, transparent: true, opacity: 0.45 }));
+moonHalo.position.copy(moon.position);
+scene.add(moonHalo);
+const starPositions = [];
+for (let i = 0; i < 145; i += 1) starPositions.push(-42 + Math.random() * 84, 3 + Math.random() * 12, -12);
+const starGeometry = new THREE.BufferGeometry();
+starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xd8e9ff, size: 0.075, transparent: true, opacity: 0.8 })));
+
+// Road surface, reflective center lane, broken markings and alternating curb lights.
 box(scene, 200, 0.6, 12, materials.road, 0, -0.3, 0);
 box(scene, 200, 0.13, 12.15, materials.curb, 0, 0.04, 0);
 box(scene, 200, 0.13, 12.2, materials.road, 0, 0.17, 0);
@@ -67,6 +81,11 @@ for (let i = 0; i < 18; i += 1) {
   marker.material.transparent = true;
   marker.material.opacity = 0.45;
   laneMarkers.push(marker);
+}
+const curbLights = [];
+for (let i = 0; i < 30; i += 1) {
+  const light = box(scene, 0.42, 0.045, 0.08, i % 2 ? materials.glow : materials.red, -24 + i * 1.7, 0.25, 5.55);
+  curbLights.push(light);
 }
 
 // Handmade, low-poly city blocks, lit windows and club signs; no external art assets.
@@ -95,7 +114,21 @@ for (let i = 0; i < 12; i += 1) {
   buildings.push(group);
 }
 
-// The runner is an original, toy-like blues musician, built entirely from geometry.
+// Street lamps in the foreground make the road feel like a real night-time boulevard.
+const streetLamps = [];
+for (let i = 0; i < 5; i += 1) {
+  const lamp = new THREE.Group();
+  cylinder(lamp, 0.07, 0.11, 5.1, materials.black, 0, 2.55, -0.4, 8);
+  box(lamp, 0.95, 0.1, 0.12, materials.black, 0.35, 5.1, -0.4);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), materials.lamp);
+  bulb.position.set(0.76, 4.98, -0.3);
+  lamp.add(bulb);
+  lamp.position.set(-20 + i * 11, 0, -1.5);
+  scene.add(lamp);
+  streetLamps.push(lamp);
+}
+
+// Original, toy-like blues musician, built entirely from geometry.
 const runner = new THREE.Group();
 runner.position.set(-5.3, 0, 1);
 scene.add(runner);
@@ -112,12 +145,10 @@ box(runner, 0.24, 0.13, 0.07, materials.white, -0.15, 2.03, 0.39);
 box(runner, 0.24, 0.13, 0.07, materials.white, 0.15, 2.03, 0.39);
 const leftArm = box(runner, 0.22, 0.72, 0.24, materials.blue, -0.55, 1.27, 0);
 const rightArm = box(runner, 0.22, 0.72, 0.24, materials.blue, 0.55, 1.27, 0);
-leftArm.rotation.z = -0.28;
-rightArm.rotation.z = 0.28;
 const leftLeg = box(runner, 0.3, 0.68, 0.3, materials.darkBlue, -0.22, 0.35, 0);
 const rightLeg = box(runner, 0.3, 0.68, 0.3, materials.darkBlue, 0.22, 0.35, 0);
-box(runner, 0.43, 0.16, 0.46, materials.black, -0.22, 0.08, 0.08);
-box(runner, 0.43, 0.16, 0.46, materials.black, 0.22, 0.08, 0.08);
+const leftShoe = box(runner, 0.43, 0.16, 0.46, materials.black, -0.22, 0.08, 0.08);
+const rightShoe = box(runner, 0.43, 0.16, 0.46, materials.black, 0.22, 0.08, 0.08);
 // A small brass horn silhouette sits at the musician's side.
 cylinder(runner, 0.09, 0.09, 0.68, materials.gold, 0.68, 1.25, 0.1, 10).rotation.z = Math.PI / 2;
 cylinder(runner, 0.22, 0.09, 0.26, materials.gold, 1.08, 1.25, 0.1, 10).rotation.z = Math.PI / 2;
@@ -133,6 +164,7 @@ function makeBarricade(x) {
     slash.rotation.z = stripe * -0.52;
   }
   group.position.set(x, 0.2, 1.1);
+  group.userData.kind = 'jump';
   scene.add(group);
   obstacles.push(group);
 }
@@ -144,6 +176,21 @@ function makeCone(x) {
   group.add(cone);
   box(group, 0.39, 0.12, 0.4, materials.white, 0, 0.55, 0.18);
   group.position.set(x, 0.18, 1);
+  group.userData.kind = 'jump';
+  scene.add(group);
+  obstacles.push(group);
+}
+function makeOverhead(x) {
+  const group = new THREE.Group();
+  // Hanging low clearance bar: duck beneath it, or jump high enough to pass over.
+  cylinder(group, 0.09, 0.09, 1.28, materials.black, -0.53, 2.3, 0, 8);
+  cylinder(group, 0.09, 0.09, 1.28, materials.black, 0.53, 2.3, 0, 8);
+  box(group, 1.65, 0.45, 0.48, materials.red, 0, 1.6, 0);
+  box(group, 1.35, 0.1, 0.5, materials.white, 0, 1.61, 0.26);
+  box(group, 0.09, 0.85, 0.12, materials.white, -0.4, 1.61, 0.33).rotation.z = -0.45;
+  box(group, 0.09, 0.85, 0.12, materials.white, 0.4, 1.61, 0.33).rotation.z = -0.45;
+  group.position.set(x, 0.16, 0.8);
+  group.userData.kind = 'duck';
   scene.add(group);
   obstacles.push(group);
 }
@@ -171,6 +218,7 @@ let spawnClock = 0;
 let pickupClock = 1.5;
 let jumpVelocity = 0;
 let grounded = true;
+let ducking = false;
 let toastTimer = 0;
 const clock = new THREE.Clock();
 
@@ -180,9 +228,14 @@ function updateHud() {
   bestElement.textContent = String(best).padStart(5, '0');
 }
 function jump() {
-  if (state !== 'running' || !grounded) return;
+  if (state !== 'running' || !grounded || ducking) return;
   jumpVelocity = 10.8;
   grounded = false;
+}
+function setDucking(value) {
+  ducking = value && state === 'running';
+  if (ducking) jumpVelocity = 0;
+  document.querySelector('#duck-button').classList.toggle('active', ducking);
 }
 function startGame() {
   score = 0;
@@ -192,7 +245,9 @@ function startGame() {
   pickupClock = 1.8;
   jumpVelocity = 0;
   grounded = true;
+  setDucking(false);
   runner.position.y = 0;
+  runner.scale.y = 1;
   for (const obstacle of obstacles) scene.remove(obstacle);
   for (const pickup of pickups) scene.remove(pickup);
   obstacles.length = 0;
@@ -205,6 +260,8 @@ function startGame() {
 function endGame() {
   if (state !== 'running') return;
   state = 'over';
+  setDucking(false);
+  runner.scale.y = 1;
   best = Math.max(best, Math.floor(score));
   try { localStorage.setItem('midnightRhythmBest', String(best)); } catch { /* Storage can be disabled. */ }
   overlayTitle.innerHTML = 'NICE RUN.<br /><em>ONE MORE?</em>';
@@ -220,7 +277,11 @@ function showToast(message) {
 }
 
 startButton.addEventListener('click', startGame);
-document.querySelector('#jump-button').addEventListener('pointerdown', (event) => { event.preventDefault(); jump(); });
+const jumpButton = document.querySelector('#jump-button');
+jumpButton.addEventListener('pointerdown', (event) => { event.preventDefault(); jump(); });
+const duckButton = document.querySelector('#duck-button');
+duckButton.addEventListener('pointerdown', (event) => { event.preventDefault(); duckButton.setPointerCapture(event.pointerId); setDucking(true); });
+for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) duckButton.addEventListener(eventName, () => setDucking(false));
 renderer.domElement.addEventListener('pointerdown', () => { if (state === 'running') jump(); });
 window.addEventListener('keydown', (event) => {
   if (['Space', 'ArrowUp', 'KeyW'].includes(event.code)) {
@@ -228,7 +289,15 @@ window.addEventListener('keydown', (event) => {
     if (state === 'ready' || state === 'over') startGame();
     else jump();
   }
+  if (['ArrowDown', 'KeyS', 'ShiftLeft', 'ShiftRight'].includes(event.code)) {
+    event.preventDefault();
+    setDucking(true);
+  }
 });
+window.addEventListener('keyup', (event) => {
+  if (['ArrowDown', 'KeyS', 'ShiftLeft', 'ShiftRight'].includes(event.code)) setDucking(false);
+});
+window.addEventListener('blur', () => setDucking(false));
 
 function updateWorld(delta) {
   const travel = speed * delta;
@@ -236,9 +305,17 @@ function updateWorld(delta) {
     marker.position.x -= travel;
     if (marker.position.x < -24) marker.position.x += 86.4;
   }
+  for (const light of curbLights) {
+    light.position.x -= travel;
+    if (light.position.x < -26) light.position.x += 51;
+  }
   for (const building of buildings) {
     building.position.x -= travel * 0.23;
     if (building.position.x < -31) building.position.x += 108;
+  }
+  for (const lamp of streetLamps) {
+    lamp.position.x -= travel * 0.7;
+    if (lamp.position.x < -25) lamp.position.x += 55;
   }
   for (let i = obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = obstacles[i];
@@ -249,7 +326,12 @@ function updateWorld(delta) {
       continue;
     }
     const dx = Math.abs(obstacle.position.x - runner.position.x);
-    if (dx < 0.78 && runner.position.y < 0.66) endGame();
+    if (dx < 0.78) {
+      const isOverhead = obstacle.userData.kind === 'duck';
+      const duckClears = isOverhead && ducking;
+      const jumpClears = runner.position.y > (isOverhead ? 1.75 : 0.66);
+      if (!duckClears && !jumpClears) endGame();
+    }
   }
   for (let i = pickups.length - 1; i >= 0; i -= 1) {
     const pickup = pickups[i];
@@ -282,31 +364,42 @@ function animate() {
     pickupClock -= delta;
     if (spawnClock <= 0) {
       const x = 14 + Math.random() * 5;
-      if (Math.random() > 0.42) makeBarricade(x); else makeCone(x);
-      if (Math.random() > 0.58) makeCone(x + 2.4);
-      spawnClock = Math.max(0.85, 1.75 - speed * 0.035) + Math.random() * 0.7;
+      const obstacleChoice = Math.random();
+      if (obstacleChoice < 0.26) makeOverhead(x);
+      else if (obstacleChoice < 0.55) makeCone(x);
+      else makeBarricade(x);
+      if (obstacleChoice > 0.72 && Math.random() > 0.55) makeCone(x + 2.4);
+      spawnClock = Math.max(1.05, 1.9 - speed * 0.035) + Math.random() * 0.8;
     }
     if (pickupClock <= 0) {
       makeRecord(15 + Math.random() * 4, 1.55 + Math.random() * 1.3);
       pickupClock = 2.5 + Math.random() * 2;
     }
-    jumpVelocity -= 25 * delta;
-    runner.position.y += jumpVelocity * delta;
-    if (runner.position.y <= 0) {
+    if (ducking) {
+      runner.scale.y = 0.55;
       runner.position.y = 0;
-      jumpVelocity = 0;
       grounded = true;
+    } else {
+      runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 1, Math.min(1, delta * 16));
+      jumpVelocity -= 25 * delta;
+      runner.position.y += jumpVelocity * delta;
+      if (runner.position.y <= 0) {
+        runner.position.y = 0;
+        jumpVelocity = 0;
+        grounded = true;
+      }
     }
-    const stride = grounded ? Math.sin(time * speed * 1.45) : 0.25;
-    leftLeg.rotation.z = stride * 0.7;
-    rightLeg.rotation.z = -stride * 0.7;
-    leftArm.rotation.z = -0.28 - stride * 0.42;
-    rightArm.rotation.z = 0.28 + stride * 0.42;
-    torso.rotation.z = grounded ? Math.sin(time * 9) * 0.025 : -0.08;
+    const stride = grounded && !ducking ? Math.sin(time * speed * 1.45) : 0.25;
+    leftLeg.rotation.z = ducking ? -0.78 : stride * 0.7;
+    rightLeg.rotation.z = ducking ? 0.78 : -stride * 0.7;
+    leftArm.rotation.z = ducking ? -1.05 : -0.28 - stride * 0.42;
+    rightArm.rotation.z = ducking ? 1.05 : 0.28 + stride * 0.42;
+    torso.rotation.z = ducking ? 0.18 : grounded ? Math.sin(time * 9) * 0.025 : -0.08;
     updateWorld(delta);
     updateHud();
   } else {
     runner.position.y = Math.abs(Math.sin(time * 2)) * 0.06;
+    runner.scale.y = 1;
     leftArm.rotation.z = -0.3 + Math.sin(time * 2) * 0.08;
     rightArm.rotation.z = 0.3;
   }
