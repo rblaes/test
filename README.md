@@ -1,6 +1,6 @@
 # Midnight Rhythm — 3D Runner
 
-An original Three.js endless runner with a late-night blues-band atmosphere. Guide a blue-suited musician over a multi-level city route, jump road hazards, duck beneath low gantries and collect golden records. Characters and scenery are built from Three.js geometry.
+An original Three.js endless runner. Run, jump and duck through a Chicago-inspired night route that climbs to rooftops and clouds, then descends through the street into a sewer. Obstacles and collectibles match each biome and appear on level surfaces.
 
 ## Run
 
@@ -18,4 +18,4 @@ Then visit <http://localhost:8000>.
 - **Down arrow**, **S**, or **Shift**: hold to duck
 - On touch screens, hold **DUCK** and tap **JUMP**
 
-The route now has long stretches on each level, with occasional stair flights. It cycles from street level to rooftops, up into cloud height, back through town, and down into a sewer tunnel before returning to the street. Background lighting, clouds, and fog change with elevation; obstacle silhouettes change by biome. Hazards and records spawn on flat sections at their actual floor height, never on the stair flights. Three.js 0.160.1 loads from jsDelivr, so an internet connection is currently required on first load.
+The JavaScript is split into ES modules (`script.js`, `world.js`, `runner.js`, and `hazards.js`) to keep each source file manageable. Three.js 0.160.1 loads from jsDelivr, so an internet connection is currently required on the first load.
