@@ -14,7 +14,7 @@ const duckButton = document.querySelector('#duck-button');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x07111e);
 scene.fog = new THREE.Fog(0x07111e, 22, 65);
-const camera = new THREE.OrthographicCamera(-10, 10, 6, -6, 0.1, 100);
+const camera = new THREE.OrthographicCamera(-10, 10, 6, -6, 0.1, 120);
 camera.position.set(0, 3.2, 22);
 camera.lookAt(0, 3.2, 0);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -56,20 +56,19 @@ function cylinder(parent, radiusTop, radiusBottom, height, material, x, y, z = 0
   return mesh;
 }
 
-// Night sky and moon.
+// Moon and stars.
 const moon = new THREE.Mesh(new THREE.SphereGeometry(1.05, 32, 24), new THREE.MeshBasicMaterial({ color: 0xffdca1 }));
 moon.position.set(7.4, 8.35, -10);
 scene.add(moon);
 const moonHalo = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.035, 8, 64), new THREE.MeshBasicMaterial({ color: 0xe9a75b, transparent: true, opacity: 0.45 }));
 moonHalo.position.copy(moon.position);
 scene.add(moonHalo);
-const stars = [];
-for (let i = 0; i < 145; i += 1) stars.push(-42 + Math.random() * 84, 3 + Math.random() * 12, -12);
+const starPositions = [];
+for (let i = 0; i < 145; i += 1) starPositions.push(-42 + Math.random() * 84, 3 + Math.random() * 12, -12);
 const starGeometry = new THREE.BufferGeometry();
-starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(stars, 3));
+starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
 scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xd8e9ff, size: 0.075, transparent: true, opacity: 0.8 })));
 
-// Continuous road base. Stair treads blend into this surface and extend across the running lane.
 const ROAD_Y = 0.20;
 box(scene, 200, 0.6, 12, materials.road, 0, -0.3, 0);
 box(scene, 200, 0.13, 12.15, materials.curb, 0, 0.04, 0);
@@ -85,7 +84,7 @@ for (let i = 0; i < 18; i += 1) {
 const curbLights = [];
 for (let i = 0; i < 30; i += 1) curbLights.push(box(scene, 0.42, 0.045, 0.08, i % 2 ? materials.glow : materials.red, -24 + i * 1.7, 0.25, 5.55));
 
-// Background buildings stay behind the play area.
+// City stays behind the road and player.
 const CITY_Z = -5.2;
 const buildings = [];
 const buildingColors = [0x182338, 0x20243a, 0x25212b, 0x152a39];
@@ -113,57 +112,65 @@ for (let i = 0; i < 12; i += 1) {
   buildings.push(group);
 }
 
-// A repeating route: gradual stairs up, a longer elevated street, then stairs down.
-// Elevation is shared by the rendered path, runner, pickups and obstacles.
-const stairFlights = [];
+// Repeating multi-level path: climbs to level 1, level 2, then level 3,
+// runs along long landings and descends back down. Each tile has a known floor height.
+const routes = [];
 const STEP_WIDTH = 0.72;
 const STEP_RISE = 0.30;
-const ASCENT_STEPS = 10;
-const HIGH_FLOOR_TILES = 22;
-const DESCENT_STEPS = 10;
-const ASCENT_LENGTH = ASCENT_STEPS * STEP_WIDTH;
-const HIGH_FLOOR_LENGTH = HIGH_FLOOR_TILES * STEP_WIDTH;
-const DESCENT_LENGTH = DESCENT_STEPS * STEP_WIDTH;
-const ROUTE_LENGTH = ASCENT_LENGTH + HIGH_FLOOR_LENGTH + DESCENT_LENGTH;
-const ROUTE_SPACING = 48;
-const HIGH_LEVEL = ASCENT_STEPS * STEP_RISE;
+const ROUTE_SPACING = 82;
+const ROUTE_PATTERN = [
+  { type: 'stairs', count: 8, direction: 1 },  // street to floor 1
+  { type: 'platform', count: 13 },
+  { type: 'stairs', count: 8, direction: 1 },  // floor 1 to floor 2
+  { type: 'platform', count: 19 },
+  { type: 'stairs', count: 6, direction: 1 },  // floor 2 to floor 3
+  { type: 'platform', count: 14 },
+  { type: 'stairs', count: 6, direction: -1 }, // floor 3 to floor 2
+  { type: 'platform', count: 10 },
+  { type: 'stairs', count: 8, direction: -1 }, // floor 2 to floor 1
+  { type: 'platform', count: 12 },
+  { type: 'stairs', count: 8, direction: -1 }, // floor 1 back to street
+];
+const ROUTE_LENGTH = ROUTE_PATTERN.reduce((sum, segment) => sum + segment.count * STEP_WIDTH, 0);
+const HIGHEST_LEVEL = 30 * STEP_RISE;
 function makeRoute(startX) {
   const group = new THREE.Group();
   const surfaces = [];
-  // Each riser is backed to the road; the tread's top is level with the following floor.
-  for (let i = 0; i < ASCENT_STEPS; i += 1) {
-    const level = (i + 1) * STEP_RISE;
-    const x = (i + 0.5) * STEP_WIDTH;
-    box(group, STEP_WIDTH + 0.025, level, 5.8, materials.stair, x, ROAD_Y + level / 2, 3.15);
-    box(group, STEP_WIDTH + 0.04, 0.075, 5.84, materials.stairTop, x, ROAD_Y + level - 0.0375, 3.15);
-    box(group, STEP_WIDTH + 0.04, 0.045, 0.08, materials.stairEdge, x, ROAD_Y + level + 0.005, 0.22);
-    surfaces.push({ start: i * STEP_WIDTH, end: (i + 1) * STEP_WIDTH, height: ROAD_Y + level, type: 'stair' });
+  let cursor = 0;
+  let level = 0;
+  for (const segment of ROUTE_PATTERN) {
+    for (let i = 0; i < segment.count; i += 1) {
+      if (segment.type === 'stairs') level += segment.direction * STEP_RISE;
+      const top = Math.max(0, level);
+      const x = cursor + STEP_WIDTH / 2;
+      const blockHeight = Math.max(top, 0.055);
+      box(group, STEP_WIDTH + 0.025, blockHeight, 5.8, materials.stair, x, ROAD_Y + blockHeight / 2, 3.15);
+      box(group, STEP_WIDTH + 0.045, 0.075, 5.84, segment.type === 'stairs' ? materials.stairTop : materials.road,
+        x, ROAD_Y + top - 0.0375, 3.15);
+      if (segment.type === 'stairs') {
+        // Warm nosing lights emphasize each riser and visually tie the flight into the road.
+        box(group, STEP_WIDTH + 0.045, 0.04, 0.08, materials.stairEdge, x, ROAD_Y + top + 0.004, 0.20);
+      }
+      surfaces.push({ start: cursor, end: cursor + STEP_WIDTH, height: ROAD_Y + top, type: segment.type });
+      cursor += STEP_WIDTH;
+    }
   }
-  // Broad elevated floor / landing: the runner remains high for much longer than one step.
-  const platformStart = ASCENT_LENGTH;
-  for (let i = 0; i < HIGH_FLOOR_TILES; i += 1) {
-    const x = platformStart + (i + 0.5) * STEP_WIDTH;
-    box(group, STEP_WIDTH + 0.03, HIGH_LEVEL, 5.8, materials.stair, x, ROAD_Y + HIGH_LEVEL / 2, 3.15);
-    box(group, STEP_WIDTH + 0.04, 0.075, 5.84, materials.stairTop, x, ROAD_Y + HIGH_LEVEL - 0.0375, 3.15);
-    surfaces.push({ start: platformStart + i * STEP_WIDTH, end: platformStart + (i + 1) * STEP_WIDTH, height: ROAD_Y + HIGH_LEVEL, type: 'platform' });
-  }
-  const descentStart = platformStart + HIGH_FLOOR_LENGTH;
-  for (let i = 0; i < DESCENT_STEPS; i += 1) {
-    const level = (DESCENT_STEPS - i - 1) * STEP_RISE;
-    const x = descentStart + (i + 0.5) * STEP_WIDTH;
-    const fillHeight = Math.max(level, 0.06);
-    box(group, STEP_WIDTH + 0.025, fillHeight, 5.8, materials.stair, x, ROAD_Y + fillHeight / 2, 3.15);
-    box(group, STEP_WIDTH + 0.04, 0.075, 5.84, materials.stairTop, x, ROAD_Y + level + 0.0375, 3.15);
-    box(group, STEP_WIDTH + 0.04, 0.045, 0.08, materials.stairEdge, x, ROAD_Y + level + 0.08, 0.22);
-    surfaces.push({ start: descentStart + i * STEP_WIDTH, end: descentStart + (i + 1) * STEP_WIDTH, height: ROAD_Y + level, type: 'stair' });
-  }
-  // Side stringers and warm edge lights make the steps feel attached to the existing road.
-  for (const z of [0.18, 6.12]) {
-    box(group, ROUTE_LENGTH, 0.12, 0.14, materials.rail, ROUTE_LENGTH / 2, ROAD_Y + 0.04, z);
+  // Side trim follows the elevated shape as short posts/rails on each level section.
+  for (let i = 0; i < surfaces.length; i += 1) {
+    const surface = surfaces[i];
+    if (surface.type !== 'platform' || (i > 0 && surfaces[i - 1].type === 'platform')) continue;
+    let end = i;
+    while (end + 1 < surfaces.length && surfaces[end + 1].type === 'platform' && surfaces[end + 1].height === surface.height) end += 1;
+    const length = (end - i + 1) * STEP_WIDTH;
+    const centerX = surface.start + length / 2;
+    for (const sideZ of [0.20, 6.10]) {
+      box(group, length, 0.09, 0.12, materials.rail, centerX, surface.height + 0.48, sideZ);
+      for (let post = 0; post <= length; post += 2.2) box(group, 0.07, 0.52, 0.07, materials.rail, surface.start + post, surface.height + 0.24, sideZ);
+    }
   }
   group.position.x = startX;
   scene.add(group);
-  stairFlights.push({ group, surfaces });
+  routes.push({ group, surfaces });
 }
 for (let i = 0; i < 4; i += 1) makeRoute(17 + i * ROUTE_SPACING);
 
@@ -206,20 +213,23 @@ cylinder(runner, 0.22, 0.09, 0.26, materials.gold, 1.08, 1.25, 0.1, 10).rotation
 
 const obstacles = [];
 const pickups = [];
-function makeBarricade(x, floorY) {
-  const group = new THREE.Group();
-  box(group, 1.5, 0.28, 0.65, materials.concrete, 0, 0.14, 0);
-  box(group, 1.35, 0.72, 0.38, materials.white, 0, 0.6, 0.08);
-  for (let stripe = -1; stripe <= 1; stripe += 2) {
-    const slash = box(group, 0.2, 0.78, 0.04, materials.red, stripe * 0.37, 0.6, 0.3);
-    slash.rotation.z = stripe * -0.52;
-  }
+function trackObstacle(group, x, floorY, kind) {
   group.position.set(x, floorY, 3.1);
-  group.userData.kind = 'jump';
+  group.userData.kind = kind;
   group.userData.floorY = floorY;
   group.userData.checked = false;
   scene.add(group);
   obstacles.push(group);
+}
+function makeBarricade(x, floorY) {
+  const group = new THREE.Group();
+  box(group, 1.5, 0.28, 0.65, materials.concrete, 0, 0.14, 0);
+  box(group, 1.35, 0.72, 0.38, materials.white, 0, 0.6, 0.08);
+  for (const stripe of [-1, 1]) {
+    const slash = box(group, 0.2, 0.78, 0.04, materials.red, stripe * 0.37, 0.6, 0.3);
+    slash.rotation.z = stripe * -0.52;
+  }
+  trackObstacle(group, x, floorY, 'jump');
 }
 function makeCone(x, floorY) {
   const group = new THREE.Group();
@@ -228,12 +238,7 @@ function makeCone(x, floorY) {
   cone.position.y = 0.64;
   group.add(cone);
   box(group, 0.39, 0.12, 0.4, materials.white, 0, 0.54, 0.18);
-  group.position.set(x, floorY, 3.1);
-  group.userData.kind = 'jump';
-  group.userData.floorY = floorY;
-  group.userData.checked = false;
-  scene.add(group);
-  obstacles.push(group);
+  trackObstacle(group, x, floorY, 'jump');
 }
 function makeOverhead(x, floorY) {
   const group = new THREE.Group();
@@ -245,12 +250,7 @@ function makeOverhead(x, floorY) {
   for (const xMark of [-0.48, -0.16, 0.16, 0.48]) box(group, 0.075, 0.42, 0.04, materials.white, xMark, 1.66, 0.39).rotation.z = -0.42;
   box(group, 0.12, 1.45, 0.14, materials.black, -0.62, 2.67, 0.04);
   box(group, 0.12, 1.45, 0.14, materials.black, 0.62, 2.67, 0.04);
-  group.position.set(x, floorY, 3.25);
-  group.userData.kind = 'duck';
-  group.userData.floorY = floorY;
-  group.userData.checked = false;
-  scene.add(group);
-  obstacles.push(group);
+  trackObstacle(group, x, floorY, 'duck');
 }
 function makeRecord(x, y, floorY) {
   const group = new THREE.Group();
@@ -261,28 +261,26 @@ function makeRecord(x, y, floorY) {
   center.rotation.x = Math.PI / 2;
   group.add(center);
   group.position.set(x, y + floorY, 3.2);
-  group.userData.floorY = floorY;
+  group.userData.baseY = group.position.y;
+  group.userData.phase = Math.random() * Math.PI * 2;
   scene.add(group);
   pickups.push(group);
 }
 
-// Query terrain under a world-X position. Flat elevated platform is obstacle-safe;
-// ascending/descending steps are intentionally kept clear of spawned hazards.
 function terrainAt(worldX) {
-  for (const route of stairFlights) {
+  for (const route of routes) {
     const localX = worldX - route.group.position.x;
     if (localX < 0 || localX >= ROUTE_LENGTH) continue;
-    const surface = route.surfaces.find((item) => localX >= item.start && localX < item.end);
-    return surface || { height: ROAD_Y, type: 'road' };
+    const surface = route.surfaces[Math.min(route.surfaces.length - 1, Math.floor(localX / STEP_WIDTH))];
+    return surface;
   }
   return { height: ROAD_Y, type: 'road' };
 }
 function findObstacleSpawn(startX) {
-  // Don't put props inside stair runs. Search forward for either ordinary road or
-  // the long, level upper floor, where obstacles are placed at that floor's height.
-  for (let x = startX; x < startX + ROUTE_SPACING * 2; x += 0.45) {
+  // Hazards may appear on level platforms, never inside stair treads or transitions.
+  for (let x = startX; x < startX + ROUTE_SPACING * 2; x += 0.4) {
     const terrain = terrainAt(x);
-    if (terrain.type !== 'stair') return { x, floorY: terrain.height };
+    if (terrain.type === 'platform' || terrain.type === 'road') return { x, floorY: terrain.height };
   }
   return null;
 }
@@ -337,7 +335,7 @@ function startGame() {
   for (const pickup of pickups) scene.remove(pickup);
   obstacles.length = 0;
   pickups.length = 0;
-  stairFlights.forEach((route, index) => { route.group.position.x = 17 + index * ROUTE_SPACING; });
+  routes.forEach((route, index) => { route.group.position.x = 17 + index * ROUTE_SPACING; });
   state = 'running';
   overlay.classList.add('hidden');
   updateHud();
@@ -387,7 +385,7 @@ window.addEventListener('keyup', (event) => {
 });
 window.addEventListener('blur', () => setDucking(false));
 
-function updateWorld(delta) {
+function updateWorld(delta, time) {
   const travel = speed * delta;
   for (const marker of laneMarkers) {
     marker.position.x -= travel;
@@ -405,13 +403,13 @@ function updateWorld(delta) {
     lamp.position.x -= travel * 0.7;
     if (lamp.position.x < -25) lamp.position.x += 55;
   }
-  for (const route of stairFlights) {
+  for (const route of routes) {
     route.group.position.x -= travel;
-    if (route.group.position.x < runner.position.x - ROUTE_LENGTH) route.group.position.x += ROUTE_SPACING * stairFlights.length;
+    if (route.group.position.x < runner.position.x - ROUTE_LENGTH) route.group.position.x += ROUTE_SPACING * routes.length;
   }
 
-  const terrain = terrainAt(runner.position.x);
-  groundHeight = THREE.MathUtils.damp(groundHeight, terrain.height, 18, delta);
+  // Snap feet to each tread so the character follows each real step, not a floating camera effect.
+  groundHeight = terrainAt(runner.position.x).height;
 
   for (let i = obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = obstacles[i];
@@ -421,10 +419,9 @@ function updateWorld(delta) {
       obstacles.splice(i, 1);
       continue;
     }
-    const dx = Math.abs(obstacle.position.x - runner.position.x);
-    if (dx < 0.9 && !obstacle.userData.checked) {
+    if (Math.abs(obstacle.position.x - runner.position.x) < 0.9 && !obstacle.userData.checked) {
       obstacle.userData.checked = true;
-      const sameFloor = Math.abs(groundHeight - obstacle.userData.floorY) < 0.38;
+      const sameFloor = Math.abs(groundHeight - obstacle.userData.floorY) < 0.22;
       const cleared = obstacle.userData.kind === 'duck' ? ducking : jumpHeight > 0.66;
       if (sameFloor && !cleared) endGame();
     }
@@ -434,7 +431,7 @@ function updateWorld(delta) {
     pickup.position.x -= travel;
     pickup.rotation.x += delta * 2.2;
     pickup.rotation.y += delta * 1.7;
-    pickup.position.y += Math.sin(performance.now() * 0.003 + i) * delta * 0.3;
+    pickup.position.y = pickup.userData.baseY + Math.sin(time * 3 + pickup.userData.phase) * 0.12;
     if (Math.abs(pickup.position.x - runner.position.x) < 0.85 && Math.abs(pickup.position.y - (runner.position.y + 1.5)) < 1.5) {
       scene.remove(pickup);
       pickups.splice(i, 1);
@@ -468,8 +465,8 @@ function animate() {
       } else spawnClock = 0.4;
     }
     if (pickupClock <= 0) {
-      const pickupSpawn = findObstacleSpawn(15 + Math.random() * 4);
-      if (pickupSpawn) makeRecord(pickupSpawn.x, 1.55 + Math.random() * 1.3, pickupSpawn.floorY);
+      const spawn = findObstacleSpawn(15 + Math.random() * 4);
+      if (spawn) makeRecord(spawn.x, 1.55 + Math.random() * 1.3, spawn.floorY);
       pickupClock = 2.5 + Math.random() * 2;
     }
     if (ducking) {
@@ -489,7 +486,7 @@ function animate() {
         grounded = true;
       }
     }
-    updateWorld(delta);
+    updateWorld(delta, time);
     runner.position.y = groundHeight + jumpHeight;
     const stride = grounded && !ducking ? Math.sin(time * speed * 1.45) : 0.25;
     leftLeg.rotation.z = ducking ? -0.78 : stride * 0.7;
@@ -498,7 +495,7 @@ function animate() {
     rightArm.rotation.z = ducking ? 1.05 : 0.28 + stride * 0.42;
     torso.rotation.z = ducking ? 0.18 : grounded ? Math.sin(time * 9) * 0.025 : -0.08;
     updateHud();
-    const cameraY = 3.2 + (groundHeight - ROAD_Y) * 0.65;
+    const cameraY = 3.2 + (groundHeight - ROAD_Y) * 0.68;
     camera.position.y = THREE.MathUtils.damp(camera.position.y, cameraY, 5, delta);
     camera.lookAt(0, camera.position.y, 0);
   } else {
