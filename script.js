@@ -9,15 +9,14 @@ const overlayTitle = document.querySelector('#overlay-title');
 const overlayCopy = document.querySelector('#overlay-copy');
 const startButton = document.querySelector('#start-button');
 const toast = document.querySelector('#toast');
+const duckButton = document.querySelector('#duck-button');
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x07111e);
 scene.fog = new THREE.Fog(0x07111e, 22, 65);
-
 const camera = new THREE.OrthographicCamera(-10, 10, 6, -6, 0.1, 100);
 camera.position.set(0, 3.2, 22);
 camera.lookAt(0, 3.2, 0);
-
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -26,7 +25,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
 game.prepend(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xb9d8ff, 0x22131a, 2.0));
+scene.add(new THREE.HemisphereLight(0xb9d8ff, 0x22131a, 2));
 const moonLight = new THREE.DirectionalLight(0xb8d9ff, 2.3);
 moonLight.position.set(-5, 12, 12);
 scene.add(moonLight);
@@ -43,7 +42,6 @@ const materials = {
   record: new THREE.MeshStandardMaterial({ color: 0xd8a64d, metalness: 0.55, roughness: 0.3, emissive: 0x4c2608 }),
   lamp: new THREE.MeshStandardMaterial({ color: 0xffd28a, emissive: 0xff9f38, emissiveIntensity: 2.2 }),
 };
-
 function box(parent, width, height, depth, material, x, y, z = 0) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
   mesh.position.set(x, y, z);
@@ -57,7 +55,7 @@ function cylinder(parent, radiusTop, radiusBottom, height, material, x, y, z = 0
   return mesh;
 }
 
-// A glowing moon, hazy rings and a sparse star field add depth to the night sky.
+// Moon, halo and stars sit behind all city geometry.
 const moon = new THREE.Mesh(new THREE.SphereGeometry(1.05, 32, 24), new THREE.MeshBasicMaterial({ color: 0xffdca1 }));
 moon.position.set(7.4, 8.35, -10);
 scene.add(moon);
@@ -70,7 +68,7 @@ const starGeometry = new THREE.BufferGeometry();
 starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
 scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xd8e9ff, size: 0.075, transparent: true, opacity: 0.8 })));
 
-// Road surface, reflective center lane, broken markings and alternating curb lights.
+// Road and lane markers occupy the middle depth plane.
 box(scene, 200, 0.6, 12, materials.road, 0, -0.3, 0);
 box(scene, 200, 0.13, 12.15, materials.curb, 0, 0.04, 0);
 box(scene, 200, 0.13, 12.2, materials.road, 0, 0.17, 0);
@@ -84,11 +82,12 @@ for (let i = 0; i < 18; i += 1) {
 }
 const curbLights = [];
 for (let i = 0; i < 30; i += 1) {
-  const light = box(scene, 0.42, 0.045, 0.08, i % 2 ? materials.glow : materials.red, -24 + i * 1.7, 0.25, 5.55);
-  curbLights.push(light);
+  curbLights.push(box(scene, 0.42, 0.045, 0.08, i % 2 ? materials.glow : materials.red, -24 + i * 1.7, 0.25, 5.55));
 }
 
-// Handmade, low-poly city blocks, lit windows and club signs; no external art assets.
+// Keep every city piece (including windows and signs) on the far side of the road.
+// The camera looks from +Z toward the origin; positive Z is foreground.
+const CITY_Z = -5.2;
 const buildings = [];
 const buildingColors = [0x182338, 0x20243a, 0x25212b, 0x152a39];
 for (let i = 0; i < 12; i += 1) {
@@ -96,25 +95,26 @@ for (let i = 0; i < 12; i += 1) {
   const width = 3.7 + Math.random() * 2.7;
   const height = 5 + Math.random() * 9;
   const depth = 1.5 + Math.random() * 2;
-  box(group, width, height, depth, mat(buildingColors[i % buildingColors.length]), 0, height / 2 + 0.3, -3.2);
+  box(group, width, height, depth, mat(buildingColors[i % buildingColors.length]), 0, height / 2 + 0.3, CITY_Z);
+  // Match window/sign Z to the building facade instead of placing it at positive Z.
+  const facadeZ = CITY_Z + depth / 2 + 0.035;
   for (let row = 0; row < Math.floor(height / 1.45); row += 1) {
     for (let col = 0; col < Math.max(2, Math.floor(width / 1.15)); col += 1) {
       if (Math.random() > 0.56) continue;
       const windowMesh = box(group, 0.4, 0.55, 0.035, Math.random() > 0.25 ? materials.window : materials.glow,
-        -width / 2 + 0.58 + col * 1.05, 1.2 + row * 1.35, depth / 2 + 0.03);
+        -width / 2 + 0.58 + col * 1.05, 1.2 + row * 1.35, facadeZ);
       windowMesh.material = windowMesh.material.clone();
     }
   }
   if (i % 3 === 1) {
-    box(group, width * 0.62, 0.5, 0.12, materials.glow, 0, 2.25, depth / 2 + 0.1);
-    box(group, width * 0.66, 0.08, 0.15, materials.gold, 0, 1.94, depth / 2 + 0.12);
+    box(group, width * 0.62, 0.5, 0.12, materials.glow, 0, 2.25, facadeZ + 0.02);
+    box(group, width * 0.66, 0.08, 0.15, materials.gold, 0, 1.94, facadeZ + 0.04);
   }
   group.position.x = -24 + i * 9;
   scene.add(group);
   buildings.push(group);
 }
 
-// Street lamps in the foreground make the road feel like a real night-time boulevard.
 const streetLamps = [];
 for (let i = 0; i < 5; i += 1) {
   const lamp = new THREE.Group();
@@ -128,9 +128,9 @@ for (let i = 0; i < 5; i += 1) {
   streetLamps.push(lamp);
 }
 
-// Original, toy-like blues musician, built entirely from geometry.
+// Runner is deliberately in front of the road and city layers.
 const runner = new THREE.Group();
-runner.position.set(-5.3, 0, 1);
+runner.position.set(-5.3, 0, 2.7);
 scene.add(runner);
 const torso = box(runner, 0.82, 1.05, 0.46, materials.blue, 0, 1.2, 0);
 box(runner, 0.08, 0.8, 0.05, materials.white, 0, 1.22, 0.25);
@@ -147,9 +147,8 @@ const leftArm = box(runner, 0.22, 0.72, 0.24, materials.blue, -0.55, 1.27, 0);
 const rightArm = box(runner, 0.22, 0.72, 0.24, materials.blue, 0.55, 1.27, 0);
 const leftLeg = box(runner, 0.3, 0.68, 0.3, materials.darkBlue, -0.22, 0.35, 0);
 const rightLeg = box(runner, 0.3, 0.68, 0.3, materials.darkBlue, 0.22, 0.35, 0);
-const leftShoe = box(runner, 0.43, 0.16, 0.46, materials.black, -0.22, 0.08, 0.08);
-const rightShoe = box(runner, 0.43, 0.16, 0.46, materials.black, 0.22, 0.08, 0.08);
-// A small brass horn silhouette sits at the musician's side.
+box(runner, 0.43, 0.16, 0.46, materials.black, -0.22, 0.08, 0.08);
+box(runner, 0.43, 0.16, 0.46, materials.black, 0.22, 0.08, 0.08);
 cylinder(runner, 0.09, 0.09, 0.68, materials.gold, 0.68, 1.25, 0.1, 10).rotation.z = Math.PI / 2;
 cylinder(runner, 0.22, 0.09, 0.26, materials.gold, 1.08, 1.25, 0.1, 10).rotation.z = Math.PI / 2;
 
@@ -163,7 +162,7 @@ function makeBarricade(x) {
     const slash = box(group, 0.2, 0.78, 0.04, materials.red, stripe * 0.37, 0.68, 0.3);
     slash.rotation.z = stripe * -0.52;
   }
-  group.position.set(x, 0.2, 1.1);
+  group.position.set(x, 0.2, 3.1);
   group.userData.kind = 'jump';
   scene.add(group);
   obstacles.push(group);
@@ -175,21 +174,26 @@ function makeCone(x) {
   cone.position.y = 0.65;
   group.add(cone);
   box(group, 0.39, 0.12, 0.4, materials.white, 0, 0.55, 0.18);
-  group.position.set(x, 0.18, 1);
+  group.position.set(x, 0.18, 3.1);
   group.userData.kind = 'jump';
   scene.add(group);
   obstacles.push(group);
 }
 function makeOverhead(x) {
   const group = new THREE.Group();
-  // Hanging low clearance bar: duck beneath it, or jump high enough to pass over.
-  cylinder(group, 0.09, 0.09, 1.28, materials.black, -0.53, 2.3, 0, 8);
-  cylinder(group, 0.09, 0.09, 1.28, materials.black, 0.53, 2.3, 0, 8);
-  box(group, 1.65, 0.45, 0.48, materials.red, 0, 1.6, 0);
-  box(group, 1.35, 0.1, 0.5, materials.white, 0, 1.61, 0.26);
-  box(group, 0.09, 0.85, 0.12, materials.white, -0.4, 1.61, 0.33).rotation.z = -0.45;
-  box(group, 0.09, 0.85, 0.12, materials.white, 0.4, 1.61, 0.33).rotation.z = -0.45;
-  group.position.set(x, 0.16, 0.8);
+  // A full roadside gantry with a clearly low hanging sign. This is a duck-only obstacle.
+  cylinder(group, 0.09, 0.12, 3.65, materials.black, -1.02, 1.82, 0, 8);
+  cylinder(group, 0.09, 0.12, 3.65, materials.black, 1.02, 1.82, 0, 8);
+  box(group, 2.2, 0.18, 0.52, materials.gold, 0, 3.62, 0.02);
+  box(group, 1.58, 0.42, 0.5, materials.red, 0, 1.66, 0.08);
+  box(group, 1.36, 0.07, 0.52, materials.white, 0, 1.66, 0.35);
+  // Reflective diagonal markings on the hanging low-clearance board.
+  for (const xMark of [-0.48, -0.16, 0.16, 0.48]) {
+    box(group, 0.075, 0.42, 0.04, materials.white, xMark, 1.66, 0.39).rotation.z = -0.42;
+  }
+  box(group, 0.12, 1.45, 0.14, materials.black, -0.62, 2.67, 0.04);
+  box(group, 0.12, 1.45, 0.14, materials.black, 0.62, 2.67, 0.04);
+  group.position.set(x, 0, 3.25);
   group.userData.kind = 'duck';
   scene.add(group);
   obstacles.push(group);
@@ -202,7 +206,7 @@ function makeRecord(x, y = 1.8) {
   const center = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.1, 16), materials.red);
   center.rotation.x = Math.PI / 2;
   group.add(center);
-  group.position.set(x, y, 1);
+  group.position.set(x, y, 3.2);
   scene.add(group);
   pickups.push(group);
 }
@@ -216,12 +220,12 @@ bestElement.textContent = String(best).padStart(5, '0');
 let speed = 9;
 let spawnClock = 0;
 let pickupClock = 1.5;
+let obstacleSequence = 0;
 let jumpVelocity = 0;
 let grounded = true;
 let ducking = false;
 let toastTimer = 0;
 const clock = new THREE.Clock();
-
 function updateHud() {
   scoreElement.textContent = String(Math.floor(score)).padStart(5, '0');
   recordsElement.textContent = String(records);
@@ -233,9 +237,9 @@ function jump() {
   grounded = false;
 }
 function setDucking(value) {
-  ducking = value && state === 'running';
+  ducking = Boolean(value && state === 'running');
   if (ducking) jumpVelocity = 0;
-  document.querySelector('#duck-button').classList.toggle('active', ducking);
+  duckButton.classList.toggle('active', ducking);
 }
 function startGame() {
   score = 0;
@@ -243,6 +247,7 @@ function startGame() {
   speed = 9;
   spawnClock = 1.1;
   pickupClock = 1.8;
+  obstacleSequence = 0;
   jumpVelocity = 0;
   grounded = true;
   setDucking(false);
@@ -277,10 +282,12 @@ function showToast(message) {
 }
 
 startButton.addEventListener('click', startGame);
-const jumpButton = document.querySelector('#jump-button');
-jumpButton.addEventListener('pointerdown', (event) => { event.preventDefault(); jump(); });
-const duckButton = document.querySelector('#duck-button');
-duckButton.addEventListener('pointerdown', (event) => { event.preventDefault(); duckButton.setPointerCapture(event.pointerId); setDucking(true); });
+document.querySelector('#jump-button').addEventListener('pointerdown', (event) => { event.preventDefault(); jump(); });
+duckButton.addEventListener('pointerdown', (event) => {
+  event.preventDefault();
+  duckButton.setPointerCapture(event.pointerId);
+  setDucking(true);
+});
 for (const eventName of ['pointerup', 'pointercancel', 'lostpointercapture']) duckButton.addEventListener(eventName, () => setDucking(false));
 renderer.domElement.addEventListener('pointerdown', () => { if (state === 'running') jump(); });
 window.addEventListener('keydown', (event) => {
@@ -325,12 +332,10 @@ function updateWorld(delta) {
       obstacles.splice(i, 1);
       continue;
     }
-    const dx = Math.abs(obstacle.position.x - runner.position.x);
-    if (dx < 0.78) {
-      const isOverhead = obstacle.userData.kind === 'duck';
-      const duckClears = isOverhead && ducking;
-      const jumpClears = runner.position.y > (isOverhead ? 1.75 : 0.66);
-      if (!duckClears && !jumpClears) endGame();
+    if (Math.abs(obstacle.position.x - runner.position.x) < 0.9) {
+      // Overhead gantries are strictly duck-only; jumping never clears them.
+      const cleared = obstacle.userData.kind === 'duck' ? ducking : runner.position.y > 0.66;
+      if (!cleared) endGame();
     }
   }
   for (let i = pickups.length - 1; i >= 0; i -= 1) {
@@ -356,27 +361,26 @@ function animate() {
   requestAnimationFrame(animate);
   const delta = Math.min(clock.getDelta(), 0.04);
   const time = clock.elapsedTime;
-
   if (state === 'running') {
     score += delta * speed * 1.8;
     speed = Math.min(17, speed + delta * 0.12);
     spawnClock -= delta;
     pickupClock -= delta;
     if (spawnClock <= 0) {
-      const x = 14 + Math.random() * 5;
-      const obstacleChoice = Math.random();
-      if (obstacleChoice < 0.26) makeOverhead(x);
-      else if (obstacleChoice < 0.55) makeCone(x);
+      const x = 14 + Math.random() * 3;
+      obstacleSequence += 1;
+      // Guarantee a duck obstacle at least once every three spawns; randomize the others.
+      if (obstacleSequence % 3 === 0 || Math.random() < 0.2) makeOverhead(x);
+      else if (Math.random() < 0.48) makeCone(x);
       else makeBarricade(x);
-      if (obstacleChoice > 0.72 && Math.random() > 0.55) makeCone(x + 2.4);
-      spawnClock = Math.max(1.05, 1.9 - speed * 0.035) + Math.random() * 0.8;
+      spawnClock = Math.max(1.5, 2.2 - speed * 0.025) + Math.random() * 0.65;
     }
     if (pickupClock <= 0) {
       makeRecord(15 + Math.random() * 4, 1.55 + Math.random() * 1.3);
       pickupClock = 2.5 + Math.random() * 2;
     }
     if (ducking) {
-      runner.scale.y = 0.55;
+      runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 0.55, Math.min(1, delta * 18));
       runner.position.y = 0;
       grounded = true;
     } else {
@@ -409,7 +413,6 @@ function animate() {
   }
   renderer.render(scene, camera);
 }
-
 function resize() {
   const width = window.innerWidth;
   const height = window.innerHeight;
