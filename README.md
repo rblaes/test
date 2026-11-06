@@ -1,27 +1,23 @@
-# Blockout 3D
+# Midnight Rhythm — 3D Runner
 
-A browser-only Blockout clone built with Three.js.
+A small, original Three.js endless side-scroller with a late-night blues-band atmosphere. Guide a blue-suited musician through a city after dark, leap over roadblocks, and collect golden records. The characters and scenery are built from Three.js geometry; there are no image, font, or audio assets to download.
 
-## Run locally
+## Run
 
-Because this is a static browser app, you can serve it from any local web server:
+Open `index.html` from a local web server (ES modules are not reliably supported from `file://` URLs):
 
 ```bash
-cd /path/to/this/repo
 python3 -m http.server 8000
 ```
 
-Then open:
-
-```text
-http://localhost:8000
-```
+Then visit <http://localhost:8000>.
 
 ## Controls
 
-- Left / Right arrows or A / D: move the paddle
-- Space: launch the ball
+- **Space**, **Up arrow**, or **W**: jump
+- **Tap/click** the play area or **JUMP** button: jump
+- Collect golden records for bonus points; avoid the barricades and cones.
 
-## Notes
+## Offline note
 
-This project intentionally avoids a build step. It uses the Three.js CDN directly in the browser, so it works as a lightweight static webpage.
+The game uses Three.js 0.160.1 from jsDelivr, as the existing project did. The game itself has no remote images or sounds, but the first load still needs internet to fetch the Three.js module. To make it fully offline, download that exact Three.js module into the repository and change the import at the top of `script.js` to a relative local path.

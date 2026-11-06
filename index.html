@@ -2,27 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Blockout 3D</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#07111e" />
+    <meta name="description" content="A jazzy, original 3D night-runner. Dodge the roadblocks, grab the records, and keep the band moving." />
+    <title>Midnight Rhythm — 3D Runner</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <div id="hud">
-      <div class="panel">
-        <span>Score</span>
-        <strong id="score">0</strong>
+    <main id="game" aria-label="Midnight Rhythm 3D runner">
+      <div id="hud" aria-live="polite">
+        <div class="hud-card"><span>Distance</span><strong id="score">00000</strong></div>
+        <div class="hud-card"><span>Records</span><strong id="records">0</strong></div>
+        <div class="hud-card best"><span>Best</span><strong id="best">00000</strong></div>
       </div>
-      <div class="panel">
-        <span>Lives</span>
-        <strong id="lives">3</strong>
-      </div>
-    </div>
-
-    <div id="message" aria-live="polite">
-      <h1>Blockout 3D</h1>
-      <p>Press Space to launch the ball</p>
-    </div>
-
+      <div class="brand" aria-hidden="true"><span class="brand-mark">♫</span><span>MIDNIGHT<br />RHYTHM</span></div>
+      <section id="overlay" class="overlay" aria-live="polite">
+        <p class="eyebrow">A THREE-DIMENSIONAL NIGHT RUN</p>
+        <h1 id="overlay-title">KEEP THE<br /><em>BLUES</em> MOVING</h1>
+        <p id="overlay-copy">A long drive, a late show, and a city full of roadblocks. Jump the barricades and collect the golden records.</p>
+        <button id="start-button" type="button">START THE RUN <span>→</span></button>
+        <p class="controls-note">SPACE / ↑ / W TO JUMP <i>•</i> TAP TO JUMP</p>
+      </section>
+      <div class="bottom-note" aria-hidden="true">CHICAGO AFTER DARK <span>✦</span> KEEP THE BEAT ALIVE</div>
+      <button id="jump-button" type="button" aria-label="Jump">JUMP</button>
+      <div id="toast" role="status" aria-live="polite"></div>
+    </main>
     <script type="module" src="./script.js"></script>
   </body>
 </html>
