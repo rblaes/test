@@ -41,6 +41,7 @@ const materials = {
   glow: new THREE.MeshStandardMaterial({ color: 0xf6bd60, emissive: 0x9c5015, emissiveIntensity: 1.4 }),
   record: new THREE.MeshStandardMaterial({ color: 0xd8a64d, metalness: 0.55, roughness: 0.3, emissive: 0x4c2608 }),
   lamp: new THREE.MeshStandardMaterial({ color: 0xffd28a, emissive: 0xff9f38, emissiveIntensity: 2.2 }),
+  stair: mat(0x596273, 0.9), stairEdge: mat(0x9b7655, 0.72), rail: mat(0x252d39, 0.45, 0.55),
 };
 function box(parent, width, height, depth, material, x, y, z = 0) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
@@ -85,8 +86,7 @@ for (let i = 0; i < 30; i += 1) {
   curbLights.push(box(scene, 0.42, 0.045, 0.08, i % 2 ? materials.glow : materials.red, -24 + i * 1.7, 0.25, 5.55));
 }
 
-// Keep every city piece (including windows and signs) on the far side of the road.
-// The camera looks from +Z toward the origin; positive Z is foreground.
+// Keep every city piece on the far side of the road.
 const CITY_Z = -5.2;
 const buildings = [];
 const buildingColors = [0x182338, 0x20243a, 0x25212b, 0x152a39];
@@ -96,7 +96,6 @@ for (let i = 0; i < 12; i += 1) {
   const height = 5 + Math.random() * 9;
   const depth = 1.5 + Math.random() * 2;
   box(group, width, height, depth, mat(buildingColors[i % buildingColors.length]), 0, height / 2 + 0.3, CITY_Z);
-  // Match window/sign Z to the building facade instead of placing it at positive Z.
   const facadeZ = CITY_Z + depth / 2 + 0.035;
   for (let row = 0; row < Math.floor(height / 1.45); row += 1) {
     for (let col = 0; col < Math.max(2, Math.floor(width / 1.15)); col += 1) {
@@ -113,6 +112,51 @@ for (let i = 0; i < 12; i += 1) {
   group.position.x = -24 + i * 9;
   scene.add(group);
   buildings.push(group);
+}
+
+// Alternating flights of exterior stairs climb and descend across the skyline.
+// Each flight is a row of individual treads with lit nosings and simple handrails.
+const staircases = [];
+function makeStairFlight(parent, startX, startY, direction, z) {
+  const count = 8;
+  const treadWidth = 0.48;
+  const rise = 0.27;
+  const treadDepth = 0.48;
+  const firstCenterY = startY + rise / 2;
+  for (let i = 0; i < count; i += 1) {
+    const y = firstCenterY + (direction * i * rise);
+    const step = box(parent, treadWidth, rise, treadDepth, materials.stair,
+      startX + i * treadWidth, y, z);
+    step.castShadow = false;
+    box(parent, treadWidth * 0.92, 0.035, treadDepth + 0.025, materials.stairEdge,
+      startX + i * treadWidth, y + rise / 2 + 0.018, z + 0.02);
+  }
+  // Rails follow the flight angle, one on either side of the steps.
+  const length = Math.hypot((count - 1) * treadWidth, (count - 1) * rise);
+  const angle = Math.atan2(direction * rise, treadWidth);
+  for (const sideZ of [-0.32, 0.32]) {
+    const railMesh = box(parent, length + 0.25, 0.07, 0.07, materials.rail,
+      startX + (count - 1) * treadWidth / 2, startY + direction * (count - 1) * rise / 2 + 0.72, z + sideZ);
+    railMesh.rotation.z = angle;
+    for (const postIndex of [0, 3, 6, 7]) {
+      const postX = startX + postIndex * treadWidth;
+      const postY = startY + direction * postIndex * rise + 0.45;
+      box(parent, 0.055, 0.68, 0.055, materials.rail, postX, postY, z + sideZ);
+    }
+  }
+}
+for (let i = 0; i < 5; i += 1) {
+  const staircase = new THREE.Group();
+  const stairZ = CITY_Z + 2.8;
+  const baseY = 2.0 + (i % 2) * 0.28;
+  // A short landing separates the ascending and descending flights.
+  makeStairFlight(staircase, -3.85, baseY, 1, stairZ);
+  box(staircase, 0.72, 0.22, 0.58, materials.stair, 0.35, baseY + 2.2, stairZ);
+  box(staircase, 0.68, 0.035, 0.62, materials.stairEdge, 0.35, baseY + 2.33, stairZ + 0.02);
+  makeStairFlight(staircase, 0.83, baseY + 2.1, -1, stairZ);
+  staircase.position.x = -25 + i * 27;
+  scene.add(staircase);
+  staircases.push(staircase);
 }
 
 const streetLamps = [];
@@ -181,13 +225,11 @@ function makeCone(x) {
 }
 function makeOverhead(x) {
   const group = new THREE.Group();
-  // A full roadside gantry with a clearly low hanging sign. This is a duck-only obstacle.
   cylinder(group, 0.09, 0.12, 3.65, materials.black, -1.02, 1.82, 0, 8);
   cylinder(group, 0.09, 0.12, 3.65, materials.black, 1.02, 1.82, 0, 8);
   box(group, 2.2, 0.18, 0.52, materials.gold, 0, 3.62, 0.02);
   box(group, 1.58, 0.42, 0.5, materials.red, 0, 1.66, 0.08);
   box(group, 1.36, 0.07, 0.52, materials.white, 0, 1.66, 0.35);
-  // Reflective diagonal markings on the hanging low-clearance board.
   for (const xMark of [-0.48, -0.16, 0.16, 0.48]) {
     box(group, 0.075, 0.42, 0.04, materials.white, xMark, 1.66, 0.39).rotation.z = -0.42;
   }
@@ -320,6 +362,10 @@ function updateWorld(delta) {
     building.position.x -= travel * 0.23;
     if (building.position.x < -31) building.position.x += 108;
   }
+  for (const staircase of staircases) {
+    staircase.position.x -= travel * 0.38;
+    if (staircase.position.x < -38) staircase.position.x += 135;
+  }
   for (const lamp of streetLamps) {
     lamp.position.x -= travel * 0.7;
     if (lamp.position.x < -25) lamp.position.x += 55;
@@ -333,7 +379,6 @@ function updateWorld(delta) {
       continue;
     }
     if (Math.abs(obstacle.position.x - runner.position.x) < 0.9) {
-      // Overhead gantries are strictly duck-only; jumping never clears them.
       const cleared = obstacle.userData.kind === 'duck' ? ducking : runner.position.y > 0.66;
       if (!cleared) endGame();
     }
@@ -369,7 +414,6 @@ function animate() {
     if (spawnClock <= 0) {
       const x = 14 + Math.random() * 3;
       obstacleSequence += 1;
-      // Guarantee a duck obstacle at least once every three spawns; randomize the others.
       if (obstacleSequence % 3 === 0 || Math.random() < 0.2) makeOverhead(x);
       else if (Math.random() < 0.48) makeCone(x);
       else makeBarricade(x);
@@ -401,11 +445,17 @@ function animate() {
     torso.rotation.z = ducking ? 0.18 : grounded ? Math.sin(time * 9) * 0.025 : -0.08;
     updateWorld(delta);
     updateHud();
+    // Gentle camera lift/drop follows the repeating stair rhythm without affecting collisions.
+    const stairMotion = Math.sin(time * 1.15) * 0.2 + Math.sin(time * 0.575) * 0.08;
+    camera.position.y = 3.2 + stairMotion;
+    camera.lookAt(0, 3.2 + stairMotion, 0);
   } else {
     runner.position.y = Math.abs(Math.sin(time * 2)) * 0.06;
     runner.scale.y = 1;
     leftArm.rotation.z = -0.3 + Math.sin(time * 2) * 0.08;
     rightArm.rotation.z = 0.3;
+    camera.position.y = 3.2;
+    camera.lookAt(0, 3.2, 0);
   }
   if (toastTimer > 0) {
     toastTimer -= delta;
