@@ -114,50 +114,39 @@ for (let i = 0; i < 12; i += 1) {
   buildings.push(group);
 }
 
-// Alternating flights of exterior stairs climb and descend across the skyline.
-// Each flight is a row of individual treads with lit nosings and simple handrails.
-const staircases = [];
-function makeStairFlight(parent, startX, startY, direction, z) {
-  const count = 8;
-  const treadWidth = 0.48;
-  const rise = 0.27;
-  const treadDepth = 0.48;
-  const firstCenterY = startY + rise / 2;
-  for (let i = 0; i < count; i += 1) {
-    const y = firstCenterY + (direction * i * rise);
-    const step = box(parent, treadWidth, rise, treadDepth, materials.stair,
-      startX + i * treadWidth, y, z);
-    step.castShadow = false;
-    box(parent, treadWidth * 0.92, 0.035, treadDepth + 0.025, materials.stairEdge,
-      startX + i * treadWidth, y + rise / 2 + 0.018, z + 0.02);
-  }
-  // Rails follow the flight angle, one on either side of the steps.
-  const length = Math.hypot((count - 1) * treadWidth, (count - 1) * rise);
-  const angle = Math.atan2(direction * rise, treadWidth);
-  for (const sideZ of [-0.32, 0.32]) {
-    const railMesh = box(parent, length + 0.25, 0.07, 0.07, materials.rail,
-      startX + (count - 1) * treadWidth / 2, startY + direction * (count - 1) * rise / 2 + 0.72, z + sideZ);
-    railMesh.rotation.z = angle;
-    for (const postIndex of [0, 3, 6, 7]) {
-      const postX = startX + postIndex * treadWidth;
-      const postY = startY + direction * postIndex * rise + 0.45;
-      box(parent, 0.055, 0.68, 0.055, materials.rail, postX, postY, z + sideZ);
+// Real playable stairs occupy the runner's ground lane. Their solid treads rise,
+// cross a short landing, then descend; the runner follows each tread as it scrolls by.
+const stairFlights = [];
+const STAIR_TREAD = 0.68;
+const STAIR_RISE = 0.24;
+const STAIR_UP_COUNT = 6;
+const STAIR_LANDING_COUNT = 2;
+const STAIR_DOWN_COUNT = 6;
+const STAIR_LENGTH = STAIR_TREAD * (STAIR_UP_COUNT + STAIR_LANDING_COUNT + STAIR_DOWN_COUNT);
+const STAIR_SPACING = 49;
+function makePlayableStairs(startX) {
+  const group = new THREE.Group();
+  const levels = [];
+  for (let i = 0; i < STAIR_UP_COUNT; i += 1) levels.push((i + 1) * STAIR_RISE);
+  for (let i = 0; i < STAIR_LANDING_COUNT; i += 1) levels.push(STAIR_UP_COUNT * STAIR_RISE);
+  for (let i = STAIR_DOWN_COUNT - 1; i >= 0; i -= 1) levels.push(i * STAIR_RISE);
+
+  levels.forEach((top, index) => {
+    const x = (index + 0.5) * STAIR_TREAD;
+    const height = Math.max(top, 0.06);
+    // Full-height riser blocks form a continuous, solid stair profile above the road.
+    box(group, STAIR_TREAD + 0.015, height, 5.5, materials.stair, x, height / 2, 3.15);
+    box(group, STAIR_TREAD - 0.04, 0.045, 5.54, materials.stairEdge, x, top + 0.022, 3.15);
+    // Small side lights make the step edges readable against the night road.
+    for (const side of [-2.7, 2.7]) {
+      box(group, 0.07, 0.06, 0.06, materials.glow, x, top + 0.06, 3.15 + side);
     }
-  }
+  });
+  group.position.x = startX;
+  scene.add(group);
+  stairFlights.push({ group, levels });
 }
-for (let i = 0; i < 5; i += 1) {
-  const staircase = new THREE.Group();
-  const stairZ = CITY_Z + 2.8;
-  const baseY = 2.0 + (i % 2) * 0.28;
-  // A short landing separates the ascending and descending flights.
-  makeStairFlight(staircase, -3.85, baseY, 1, stairZ);
-  box(staircase, 0.72, 0.22, 0.58, materials.stair, 0.35, baseY + 2.2, stairZ);
-  box(staircase, 0.68, 0.035, 0.62, materials.stairEdge, 0.35, baseY + 2.33, stairZ + 0.02);
-  makeStairFlight(staircase, 0.83, baseY + 2.1, -1, stairZ);
-  staircase.position.x = -25 + i * 27;
-  scene.add(staircase);
-  staircases.push(staircase);
-}
+for (let i = 0; i < 4; i += 1) makePlayableStairs(16 + i * STAIR_SPACING);
 
 const streetLamps = [];
 for (let i = 0; i < 5; i += 1) {
@@ -264,6 +253,8 @@ let spawnClock = 0;
 let pickupClock = 1.5;
 let obstacleSequence = 0;
 let jumpVelocity = 0;
+let jumpHeight = 0;
+let groundHeight = 0;
 let grounded = true;
 let ducking = false;
 let toastTimer = 0;
@@ -291,6 +282,8 @@ function startGame() {
   pickupClock = 1.8;
   obstacleSequence = 0;
   jumpVelocity = 0;
+  jumpHeight = 0;
+  groundHeight = 0;
   grounded = true;
   setDucking(false);
   runner.position.y = 0;
@@ -299,6 +292,7 @@ function startGame() {
   for (const pickup of pickups) scene.remove(pickup);
   obstacles.length = 0;
   pickups.length = 0;
+  stairFlights.forEach((flight, index) => { flight.group.position.x = 16 + index * STAIR_SPACING; });
   state = 'running';
   overlay.classList.add('hidden');
   updateHud();
@@ -362,14 +356,26 @@ function updateWorld(delta) {
     building.position.x -= travel * 0.23;
     if (building.position.x < -31) building.position.x += 108;
   }
-  for (const staircase of staircases) {
-    staircase.position.x -= travel * 0.38;
-    if (staircase.position.x < -38) staircase.position.x += 135;
-  }
   for (const lamp of streetLamps) {
     lamp.position.x -= travel * 0.7;
     if (lamp.position.x < -25) lamp.position.x += 55;
   }
+
+  let targetGroundHeight = 0;
+  for (const flight of stairFlights) {
+    flight.group.position.x -= travel;
+    const localX = runner.position.x - flight.group.position.x;
+    if (localX >= 0 && localX < STAIR_LENGTH) {
+      const stepIndex = Math.min(flight.levels.length - 1, Math.floor(localX / STAIR_TREAD));
+      targetGroundHeight = flight.levels[stepIndex];
+    }
+    if (flight.group.position.x < runner.position.x - STAIR_LENGTH) {
+      flight.group.position.x += STAIR_SPACING * stairFlights.length;
+    }
+  }
+  // The runner actually climbs and descends the treads. Smooth a little to avoid harsh snapping.
+  groundHeight = THREE.MathUtils.damp(groundHeight, targetGroundHeight, 14, delta);
+
   for (let i = obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = obstacles[i];
     obstacle.position.x -= travel;
@@ -379,7 +385,7 @@ function updateWorld(delta) {
       continue;
     }
     if (Math.abs(obstacle.position.x - runner.position.x) < 0.9) {
-      const cleared = obstacle.userData.kind === 'duck' ? ducking : runner.position.y > 0.66;
+      const cleared = obstacle.userData.kind === 'duck' ? ducking : jumpHeight > 0.66;
       if (!cleared) endGame();
     }
   }
@@ -425,30 +431,34 @@ function animate() {
     }
     if (ducking) {
       runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 0.55, Math.min(1, delta * 18));
-      runner.position.y = 0;
+      jumpHeight = 0;
+      jumpVelocity = 0;
       grounded = true;
     } else {
       runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 1, Math.min(1, delta * 16));
-      jumpVelocity -= 25 * delta;
-      runner.position.y += jumpVelocity * delta;
-      if (runner.position.y <= 0) {
-        runner.position.y = 0;
+      if (!grounded || jumpHeight > 0) {
+        jumpVelocity -= 25 * delta;
+        jumpHeight += jumpVelocity * delta;
+      }
+      if (jumpHeight <= 0) {
+        jumpHeight = 0;
         jumpVelocity = 0;
         grounded = true;
       }
     }
+    updateWorld(delta);
+    runner.position.y = groundHeight + jumpHeight;
     const stride = grounded && !ducking ? Math.sin(time * speed * 1.45) : 0.25;
     leftLeg.rotation.z = ducking ? -0.78 : stride * 0.7;
     rightLeg.rotation.z = ducking ? 0.78 : -stride * 0.7;
     leftArm.rotation.z = ducking ? -1.05 : -0.28 - stride * 0.42;
     rightArm.rotation.z = ducking ? 1.05 : 0.28 + stride * 0.42;
     torso.rotation.z = ducking ? 0.18 : grounded ? Math.sin(time * 9) * 0.025 : -0.08;
-    updateWorld(delta);
     updateHud();
-    // Gentle camera lift/drop follows the repeating stair rhythm without affecting collisions.
-    const stairMotion = Math.sin(time * 1.15) * 0.2 + Math.sin(time * 0.575) * 0.08;
-    camera.position.y = 3.2 + stairMotion;
-    camera.lookAt(0, 3.2 + stairMotion, 0);
+    // Camera follows some of the elevation, keeping both the climb and the runner visible.
+    const cameraY = 3.2 + groundHeight * 0.52;
+    camera.position.y = THREE.MathUtils.damp(camera.position.y, cameraY, 5, delta);
+    camera.lookAt(0, camera.position.y, 0);
   } else {
     runner.position.y = Math.abs(Math.sin(time * 2)) * 0.06;
     runner.scale.y = 1;
