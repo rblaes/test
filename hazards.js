@@ -1,6 +1,22 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
 import { box, cylinder, materials } from './world.js';
 
+function disposeObject(object) {
+  if (!object || typeof object.traverse !== 'function') return;
+  object.traverse((child) => {
+    if (child.geometry && typeof child.geometry.dispose === 'function') child.geometry.dispose();
+    if (child.material) {
+      if (Array.isArray(child.material)) {
+        child.material.forEach((material) => {
+          if (material && typeof material.dispose === 'function') material.dispose();
+        });
+      } else if (typeof child.material.dispose === 'function') {
+        child.material.dispose();
+      }
+    }
+  });
+}
+
 export function createHazards(gameScene) {
   if (!gameScene || typeof gameScene.add !== 'function') {
     throw new TypeError('createHazards requires the Three.js scene: call createHazards(scene).');
@@ -8,6 +24,22 @@ export function createHazards(gameScene) {
 
   const obstacles = [];
   const pickups = [];
+
+  function removeObstacle(index) {
+    const obstacle = obstacles[index];
+    if (!obstacle) return;
+    gameScene.remove(obstacle);
+    disposeObject(obstacle);
+    obstacles.splice(index, 1);
+  }
+
+  function removePickup(index) {
+    const pickup = pickups[index];
+    if (!pickup) return;
+    gameScene.remove(pickup);
+    disposeObject(pickup);
+    pickups.splice(index, 1);
+  }
 
   function addObstacle(x, floorY, kind, theme) {
     const group = new THREE.Group();
@@ -61,11 +93,9 @@ export function createHazards(gameScene) {
   }
 
   function clear() {
-    for (const obstacle of obstacles) gameScene.remove(obstacle);
-    for (const pickup of pickups) gameScene.remove(pickup);
-    obstacles.length = 0;
-    pickups.length = 0;
+    for (let i = obstacles.length - 1; i >= 0; i -= 1) removeObstacle(i);
+    for (let i = pickups.length - 1; i >= 0; i -= 1) removePickup(i);
   }
 
-  return { obstacles, pickups, addObstacle, addRecord, clear };
+  return { obstacles, pickups, addObstacle, addRecord, clear, removeObstacle, removePickup };
 }
