@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
-import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js';
-import { createRunner } from './runner.js';
-import { createHazards } from './hazards.js?v=20261107-1';
+import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js?v=20261107-2';
+import { createRunner } from './runner.js?v=20261107-1';
+import { createHazards } from './hazards.js?v=20261107-2';
 
 const game = document.querySelector('#game');
 const scoreElement = document.querySelector('#score');
@@ -63,21 +63,24 @@ function showToast(message) {
   toastTimer = 1.1;
 }
 function setDucking(value) {
-  ducking = Boolean(value && state === 'running');
+  // Duck is a ground stance only; down input in the air cannot alter jump physics.
+  ducking = Boolean(value && state === 'running' && grounded);
   duckButton.classList.toggle('active', ducking);
 }
 function jump() {
-  if (state !== 'running' || ducking) return;
+  if (state !== 'running') return;
   if (grounded) {
+    ducking = false;
+    duckButton.classList.remove('active');
     jumpVelocity = 10.8;
     jumpHeight = 0.01;
     grounded = false;
     jumpCount = 1;
-    return;
-  }
-  if (jumpCount === 1) {
-    jumpVelocity = 9.8;
-    jumpHeight = Math.max(jumpHeight, 0.25);
+  } else if (jumpCount === 1) {
+    // One mid-air jump gives enough airtime to clear the wide sewer pits.
+    ducking = false;
+    duckButton.classList.remove('active');
+    jumpVelocity = 10.2;
     jumpCount = 2;
   }
 }
@@ -146,7 +149,7 @@ function updateWorld(delta, time) {
       showToast('♪  +100  GOLD RECORD'); updateHud();
     } else if (pickup.position.x < -13) { scene.remove(pickup); pickups.splice(i, 1); }
   }
-  return theme;
+  return { theme, surface };
 }
 function spawnContent() {
   if (spawnClock <= 0) {
@@ -188,25 +191,26 @@ function animate() {
   if (state === 'running') {
     score += delta * speed * 1.8; speed = Math.min(17, speed + delta * 0.12);
     spawnClock -= delta; pickupClock -= delta; spawnContent();
-    if (ducking && grounded) {
+
+    if (grounded && ducking) {
       runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 0.55, Math.min(1, delta * 18));
-      jumpHeight = 0;
-      jumpVelocity = 0;
     } else {
       runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 1, Math.min(1, delta * 16));
-      if (!grounded || jumpHeight > 0) {
+      if (!grounded) {
         jumpVelocity -= 25 * delta;
         jumpHeight += jumpVelocity * delta;
       }
-      if (jumpHeight <= 0) {
-        jumpHeight = 0;
-        jumpVelocity = 0;
-        grounded = true;
-        jumpCount = 0;
-      }
     }
-    const theme = updateWorld(delta, time);
-    runner.position.y = groundHeight + jumpHeight;
+
+    const { theme, surface } = updateWorld(delta, time);
+    // A hole has no ground: only a live jump can carry the runner over it.
+    if (surface.type === 'hole' && (grounded || jumpHeight <= 0)) {
+      endGame();
+    }
+    if (jumpHeight <= 0 && surface.type !== 'hole') {
+      jumpHeight = 0; jumpVelocity = 0; grounded = true; jumpCount = 0;
+    }
+    runner.position.y = groundHeight + Math.max(0, jumpHeight);
     const stride = grounded && !ducking ? Math.sin(time * speed * 1.45) : 0.25;
     leftLeg.rotation.z = ducking ? -0.78 : stride * 0.7;
     rightLeg.rotation.z = ducking ? 0.78 : -stride * 0.7;
