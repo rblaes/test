@@ -29,7 +29,7 @@ game.prepend(renderer.domElement);
 
 const world = createWorld(scene);
 const { runner, leftArm, rightArm, leftLeg, rightLeg } = createRunner(scene);
-const hazards = createHazards();
+const hazards = createHazards(scene);
 const obstacles = hazards.obstacles;
 const pickups = hazards.pickups;
 

@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
 import { box, cylinder, materials } from './world.js';
 
-export function createHazards() {
+export function createHazards(scene) {
   const obstacles = [];
   const pickups = [];
   function addObstacle(x, floorY, kind, theme) {
