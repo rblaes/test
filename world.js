@@ -82,26 +82,34 @@ function createRoute(scene, startX) {
       const x = cursor + STEP_WIDTH / 2;
       const lower = Math.min(ROAD_Y, top);
       const height = Math.max(0.06, Math.abs(top - ROAD_Y));
-      supports[theme === 'sewer' ? 'sewer' : 'street'].push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2, z: 3.15, w: STEP_WIDTH + 0.025, h: height, d: 5.8 });
-      const topGroup = theme === 'sewer' ? 'sewer' : segment.type === 'stairs' ? 'stair' : 'road';
+      // Structural fill sits behind the running lane. It must not form an opaque
+      // foreground wall when the route drops below street level.
+      const underground = theme === 'sewer';
+      supports[underground ? 'sewer' : 'street'].push({
+        x, y: (lower + Math.max(ROAD_Y, top)) / 2,
+        z: underground ? -3.6 : -2.9,
+        w: STEP_WIDTH + 0.025, h: height, d: underground ? 2.6 : 3.8,
+      });
+      const topGroup = underground ? 'sewer' : segment.type === 'stairs' ? 'stair' : 'road';
       tops[topGroup].push({ x, y: top - 0.0375, z: 3.15, w: STEP_WIDTH + 0.04, h: 0.075, d: 5.84 });
       if (segment.type === 'stairs') edges.push({ x, y: top + 0.005, z: 0.2, w: STEP_WIDTH + 0.04, h: 0.045, d: 0.08 });
-      if (theme === 'sewer' && segment.type === 'platform' && i % 4 === 1) {
+      if (underground && segment.type === 'platform' && i % 4 === 1) {
         edges.push({ x, y: top + 0.12, z: 0.18, w: 0.16, h: 0.08, d: 0.12 });
       }
       surfaces.push({ start: cursor, end: cursor + STEP_WIDTH, height: top, type: segment.type, theme });
       cursor += STEP_WIDTH;
     }
   }
-  // Semi-transparent tunnel ribs sit behind the runner. No opaque near-side walls or ceiling cover the play view.
-  const sewerArch = new THREE.MeshStandardMaterial({ color: 0x39716d, roughness: 0.9, transparent: true, opacity: 0.22, depthWrite: false });
+  // Sparse, translucent ribs are drawn behind the runner. The near side and
+  // ceiling remain open so sewer architecture never hides the playable scene.
+  const sewerArch = new THREE.MeshStandardMaterial({ color: 0x39716d, roughness: 0.9, transparent: true, opacity: 0.2, depthWrite: false });
   for (let i = 0; i < surfaces.length; i += 1) {
-    const s = surfaces[i];
-    if (s.theme !== 'sewer' || s.type !== 'platform' || i % 10 !== 2) continue;
-    const x = s.start;
-    arches.push({ x, y: s.height + 2.5, z: -4.4, w: 0.14, h: 5, d: 0.14 });
-    arches.push({ x, y: s.height + 5.0, z: -2.0, w: 0.14, h: 0.14, d: 4.8 });
-    edges.push({ x, y: s.height + 3.8, z: -1.7, w: 0.35, h: 0.11, d: 0.08 });
+    const surface = surfaces[i];
+    if (surface.theme !== 'sewer' || surface.type !== 'platform' || i % 12 !== 2) continue;
+    const x = surface.start;
+    arches.push({ x, y: surface.height + 2.5, z: -4.4, w: 0.14, h: 5, d: 0.14 });
+    arches.push({ x, y: surface.height + 5.0, z: -3.2, w: 0.14, h: 0.14, d: 2.4 });
+    edges.push({ x, y: surface.height + 3.8, z: -2.8, w: 0.35, h: 0.11, d: 0.08 });
   }
   instancedBoxes(group, materials.stair, supports.street);
   instancedBoxes(group, materials.sewer, supports.sewer);
@@ -122,13 +130,17 @@ export function createWorld(scene) {
   scene.fog = new THREE.Fog(skyColor, 22, 65);
   scene.add(new THREE.HemisphereLight(0xb9d8ff, 0x22131a, 2));
   const moonLight = new THREE.DirectionalLight(0xb8d9ff, 2.3);
-  moonLight.position.set(-5, 12, 12); scene.add(moonLight);
+  moonLight.position.set(-5, 12, 12);
+  scene.add(moonLight);
   const sewerLight = new THREE.PointLight(0x35d5b0, 0, 24, 2);
-  sewerLight.position.set(-3, 0, 4); scene.add(sewerLight);
+  sewerLight.position.set(-3, 0, 4);
+  scene.add(sewerLight);
   const moon = new THREE.Mesh(new THREE.SphereGeometry(1.05, 32, 24), new THREE.MeshBasicMaterial({ color: 0xffdca1 }));
-  moon.position.set(7.4, 8.35, -10); scene.add(moon);
+  moon.position.set(7.4, 8.35, -10);
+  scene.add(moon);
   const halo = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.035, 8, 64), new THREE.MeshBasicMaterial({ color: 0xe9a75b, transparent: true, opacity: 0.45 }));
-  halo.position.copy(moon.position); scene.add(halo);
+  halo.position.copy(moon.position);
+  scene.add(halo);
   const starPositions = [];
   for (let i = 0; i < 145; i += 1) starPositions.push(-42 + Math.random() * 84, 3 + Math.random() * 12, -12);
   const starGeometry = new THREE.BufferGeometry();
@@ -154,20 +166,28 @@ export function createWorld(scene) {
           -width / 2 + 0.58 + col * 1.05, 1.2 + row * 1.35, facadeZ);
       }
     }
-    group.position.x = -28 + i * 10; scene.add(group); buildings.push(group);
+    group.position.x = -28 + i * 10;
+    scene.add(group);
+    buildings.push(group);
   }
   const cloudGroups = [];
+  const cloudMaterials = [];
   for (let i = 0; i < 9; i += 1) {
     const cloud = new THREE.Group();
-    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xb8cee0, roughness: 1, transparent: true, opacity: 0.62, depthWrite: false });
+    const cloudMaterial = new THREE.MeshStandardMaterial({ color: 0xb8cee0, roughness: 1, transparent: true, opacity: 0, depthWrite: false });
+    cloudMaterials.push(cloudMaterial);
     for (const [x, y, size] of [[0, 0, 1.1], [0.85, 0.08, 0.8], [-0.8, 0.04, 0.72], [0.25, 0.48, 0.68]]) {
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), cloudMat);
-      puff.position.set(x, y, 0); cloud.add(puff);
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), cloudMaterial);
+      puff.position.set(x, y, 0);
+      cloud.add(puff);
     }
-    cloud.position.set(-30 + i * 13, 9.2, -7.5); scene.add(cloud); cloudGroups.push(cloud);
+    cloud.position.set(-30 + i * 13, CLOUD_LEVEL + 2.8, -7.5);
+    scene.add(cloud);
+    cloudGroups.push(cloud);
   }
   const routes = [];
   for (let i = 0; i < 4; i += 1) routes.push(createRoute(scene, 17 + i * ROUTE_SPACING));
+
   function terrainAt(worldX) {
     for (const route of routes) {
       const localX = worldX - route.group.position.x;
@@ -176,13 +196,26 @@ export function createWorld(scene) {
     return { height: ROAD_Y, type: 'road', theme: 'street' };
   }
   function update(delta, height, travel) {
-    for (const marker of laneMarkers) { marker.position.x -= travel; if (marker.position.x < -24) marker.position.x += 115.2; }
-    for (const building of buildings) { building.position.x -= travel * 0.23; if (building.position.x < -32) building.position.x += 140; }
-    for (const cloud of cloudGroups) {
+    for (const marker of laneMarkers) {
+      marker.position.x -= travel;
+      if (marker.position.x < -24) marker.position.x += 115.2;
+    }
+    for (const building of buildings) {
+      building.position.x -= travel * 0.23;
+      if (building.position.x < -32) building.position.x += 140;
+    }
+    // Fade clouds over a wide elevation band instead of toggling visibility at
+    // one threshold. Keeping them at a fixed world altitude makes the descent read naturally.
+    const fadeStart = CLOUD_LEVEL - 2.8;
+    const fadeEnd = CLOUD_LEVEL + 0.15;
+    const t = THREE.MathUtils.clamp((height - fadeStart) / (fadeEnd - fadeStart), 0, 1);
+    const cloudOpacity = t * t * (3 - 2 * t);
+    for (let i = 0; i < cloudGroups.length; i += 1) {
+      const cloud = cloudGroups[i];
       cloud.position.x -= travel * 0.16;
       if (cloud.position.x < -38) cloud.position.x += 117;
-      cloud.visible = height >= CLOUD_LEVEL - 0.5;
-      cloud.position.y = height + 4.2;
+      cloud.visible = cloudOpacity > 0.01;
+      cloudMaterials[i].opacity = cloudOpacity * 0.62;
     }
     for (const route of routes) {
       route.group.position.x -= travel;
