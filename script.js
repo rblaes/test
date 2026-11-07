@@ -114,7 +114,7 @@ function updateWorld(delta, time) {
   for (let i = obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = obstacles[i];
     obstacle.position.x -= travel;
-    if (obstacle.position.x < -13) { scene.remove(obstacle); obstacles.splice(i, 1); continue; }
+    if (obstacle.position.x < -13) { hazards.removeObstacle(i); continue; }
     if (Math.abs(obstacle.position.x - runner.position.x) < 0.9 && !obstacle.userData.checked) {
       obstacle.userData.checked = true;
       const sameFloor = Math.abs(groundHeight - obstacle.userData.floorY) < 0.25;
@@ -128,9 +128,9 @@ function updateWorld(delta, time) {
     pickup.rotation.x += delta * 2.2; pickup.rotation.y += delta * 1.7;
     pickup.position.y = pickup.userData.baseY + Math.sin(time * 3 + pickup.userData.phase) * 0.12;
     if (Math.abs(pickup.position.x - runner.position.x) < 0.85 && Math.abs(pickup.position.y - (runner.position.y + 1.5)) < 1.5) {
-      scene.remove(pickup); pickups.splice(i, 1); records += 1; score += 100;
+      hazards.removePickup(i); records += 1; score += 100;
       showToast('♪  +100  GOLD RECORD'); updateHud();
-    } else if (pickup.position.x < -13) { scene.remove(pickup); pickups.splice(i, 1); }
+    } else if (pickup.position.x < -13) { hazards.removePickup(i); }
   }
   return theme;
 }
