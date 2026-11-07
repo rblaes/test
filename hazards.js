@@ -4,16 +4,9 @@ import { box, cylinder, materials } from './world.js';
 function disposeObject(object) {
   if (!object || typeof object.traverse !== 'function') return;
   object.traverse((child) => {
+    // Geometries are unique to each dynamically-created hazard/pickup.
+    // Materials come from the shared world palette and must not be disposed here.
     if (child.geometry && typeof child.geometry.dispose === 'function') child.geometry.dispose();
-    if (child.material) {
-      if (Array.isArray(child.material)) {
-        child.material.forEach((material) => {
-          if (material && typeof material.dispose === 'function') material.dispose();
-        });
-      } else if (typeof child.material.dispose === 'function') {
-        child.material.dispose();
-      }
-    }
   });
 }
 
