@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
-import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js?v=20261107-sewer-visibility';
+import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js';
 import { createRunner } from './runner.js';
-import { createHazards } from './hazards.js?v=20260620-2';
+import { createHazards } from './hazards.js?v=20261107-1';
 
 const game = document.querySelector('#game');
 const scoreElement = document.querySelector('#score');
@@ -45,6 +45,7 @@ let pickupClock = 1.8;
 let obstacleSequence = 0;
 let jumpVelocity = 0;
 let jumpHeight = 0;
+let jumpCount = 0;
 let groundHeight = ROAD_Y;
 let grounded = true;
 let ducking = false;
@@ -63,19 +64,32 @@ function showToast(message) {
 }
 function setDucking(value) {
   ducking = Boolean(value && state === 'running');
-  if (ducking) { jumpVelocity = 0; jumpHeight = 0; }
   duckButton.classList.toggle('active', ducking);
 }
 function jump() {
-  if (state !== 'running' || !grounded || ducking) return;
-  jumpVelocity = 10.8;
-  grounded = false;
+  if (state !== 'running' || ducking) return;
+  if (grounded) {
+    jumpVelocity = 10.8;
+    jumpHeight = 0.01;
+    grounded = false;
+    jumpCount = 1;
+    return;
+  }
+  if (jumpCount === 1) {
+    jumpVelocity = 9.8;
+    jumpHeight = Math.max(jumpHeight, 0.25);
+    jumpCount = 2;
+  }
 }
 function endGame() {
   if (state !== 'running') return;
   state = 'over';
   setDucking(false);
   runner.scale.y = 1;
+  jumpHeight = 0;
+  jumpVelocity = 0;
+  jumpCount = 0;
+  grounded = true;
   best = Math.max(best, Math.floor(score));
   try { localStorage.setItem('midnightRhythmBest', String(best)); } catch { /* Storage can be disabled. */ }
   overlayTitle.innerHTML = 'NICE RUN.<br /><em>ONE MORE?</em>';
@@ -86,7 +100,7 @@ function endGame() {
 }
 function startGame() {
   score = 0; records = 0; speed = 9; spawnClock = 1.1; pickupClock = 1.8; obstacleSequence = 0;
-  jumpVelocity = 0; jumpHeight = 0; groundHeight = ROAD_Y; grounded = true;
+  jumpVelocity = 0; jumpHeight = 0; jumpCount = 0; groundHeight = ROAD_Y; grounded = true;
   setDucking(false); runner.position.y = ROAD_Y; runner.scale.y = 1;
   hazards.clear();
   world.routes.forEach((route, index) => { route.group.position.x = 17 + index * ROUTE_SPACING; });
@@ -114,7 +128,7 @@ function updateWorld(delta, time) {
   for (let i = obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = obstacles[i];
     obstacle.position.x -= travel;
-    if (obstacle.position.x < -13) { hazards.removeObstacle(i); continue; }
+    if (obstacle.position.x < -13) { scene.remove(obstacle); obstacles.splice(i, 1); continue; }
     if (Math.abs(obstacle.position.x - runner.position.x) < 0.9 && !obstacle.userData.checked) {
       obstacle.userData.checked = true;
       const sameFloor = Math.abs(groundHeight - obstacle.userData.floorY) < 0.25;
@@ -128,9 +142,9 @@ function updateWorld(delta, time) {
     pickup.rotation.x += delta * 2.2; pickup.rotation.y += delta * 1.7;
     pickup.position.y = pickup.userData.baseY + Math.sin(time * 3 + pickup.userData.phase) * 0.12;
     if (Math.abs(pickup.position.x - runner.position.x) < 0.85 && Math.abs(pickup.position.y - (runner.position.y + 1.5)) < 1.5) {
-      hazards.removePickup(i); records += 1; score += 100;
+      scene.remove(pickup); pickups.splice(i, 1); records += 1; score += 100;
       showToast('♪  +100  GOLD RECORD'); updateHud();
-    } else if (pickup.position.x < -13) { hazards.removePickup(i); }
+    } else if (pickup.position.x < -13) { scene.remove(pickup); pickups.splice(i, 1); }
   }
   return theme;
 }
@@ -174,13 +188,22 @@ function animate() {
   if (state === 'running') {
     score += delta * speed * 1.8; speed = Math.min(17, speed + delta * 0.12);
     spawnClock -= delta; pickupClock -= delta; spawnContent();
-    if (ducking) {
+    if (ducking && grounded) {
       runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 0.55, Math.min(1, delta * 18));
-      jumpHeight = 0; jumpVelocity = 0; grounded = true;
+      jumpHeight = 0;
+      jumpVelocity = 0;
     } else {
       runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 1, Math.min(1, delta * 16));
-      if (!grounded || jumpHeight > 0) { jumpVelocity -= 25 * delta; jumpHeight += jumpVelocity * delta; }
-      if (jumpHeight <= 0) { jumpHeight = 0; jumpVelocity = 0; grounded = true; }
+      if (!grounded || jumpHeight > 0) {
+        jumpVelocity -= 25 * delta;
+        jumpHeight += jumpVelocity * delta;
+      }
+      if (jumpHeight <= 0) {
+        jumpHeight = 0;
+        jumpVelocity = 0;
+        grounded = true;
+        jumpCount = 0;
+      }
     }
     const theme = updateWorld(delta, time);
     runner.position.y = groundHeight + jumpHeight;
