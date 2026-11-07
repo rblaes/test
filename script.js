@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
-import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js?v=20261107-collision';
+import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js?v=20261107-collision-debug';
 import { createRunner } from './runner.js?v=20261107-1';
-import { createHazards } from './hazards.js?v=20261107-collision';
+import { createHazards } from './hazards.js?v=20261107-collision-debug';
 
 const game = document.querySelector('#game');
 const scoreElement = document.querySelector('#score');
@@ -13,6 +13,7 @@ const overlayCopy = document.querySelector('#overlay-copy');
 const startButton = document.querySelector('#start-button');
 const toast = document.querySelector('#toast');
 const duckButton = document.querySelector('#duck-button');
+const DEBUG_COLLISIONS = new URLSearchParams(window.location.search).has('debugCollisions');
 
 const scene = new THREE.Scene();
 const CAMERA_FOCUS_OFFSET = 3.2;
@@ -34,6 +35,7 @@ const obstacles = hazards.obstacles;
 const pickups = hazards.pickups;
 
 const RUNNER_HALF_WIDTH = 0.38;
+const RUNNER_HALF_DEPTH = 0.24;
 const RUNNER_STANDING_HEIGHT = 2.65;
 const DUCK_SCALE_Y = 0.46;
 const JUMP_GRAVITY = 25;
@@ -67,7 +69,7 @@ function showToast(message) {
   toastTimer = 1.1;
 }
 function setDucking(value) {
-  // Duck is a ground stance; pressing down in the air never changes jump physics.
+  // Duck is a ground stance; down input in the air never changes jump physics.
   ducking = Boolean(value && state === 'running' && grounded);
   duckButton.classList.toggle('active', ducking);
 }
@@ -87,8 +89,9 @@ function jump() {
     jumpCount = 2;
   }
 }
-function endGame() {
+function endGame(reason = 'unknown') {
   if (state !== 'running') return;
+  if (DEBUG_COLLISIONS) console.warn('[runner] run ended', { reason, score: Math.floor(score), x: runner.position.x, floorY: groundHeight, jumpHeight, jumpVelocity, jumpCount });
   state = 'over';
   setDucking(false);
   runner.scale.y = 1;
@@ -111,6 +114,7 @@ function startGame() {
   hazards.clear();
   world.routes.forEach((route, index) => { route.group.position.x = 17 + index * ROUTE_SPACING; });
   state = 'running'; overlay.classList.add('hidden'); updateHud(); clock.getDelta();
+  if (DEBUG_COLLISIONS) console.info('[runner] run started', { runnerX: runner.position.x, speed, obstacleCount: obstacles.length });
 }
 function findFlatSpawn(startX) {
   for (let x = startX; x < startX + ROUTE_SPACING * 1.5; x += 0.35) {
@@ -126,22 +130,44 @@ function biomeFor(height) {
   return 'street';
 }
 
-// Resolve collisions against explicit obstacle hitboxes. Horizontal motion is swept
-// across the frame so fast movement cannot skip through a narrow obstacle.
-function overlapsObstacle(obstacle, previousX, currentX) {
+// Treat the visible player and obstacle shapes as AABBs in world space.
+// Sweeping the player's previous-to-current X interval avoids tunnelling at speed.
+function collisionFor(obstacle, previousX, currentX, previousY) {
   const hitbox = obstacle.userData.hitbox;
-  if (!hitbox || Math.abs(groundHeight - obstacle.userData.floorY) > 0.3) return false;
-  const playerHalfWidth = RUNNER_HALF_WIDTH;
-  const collisionRange = hitbox.halfWidth + playerHalfWidth;
-  const left = Math.min(previousX, currentX) - collisionRange;
-  const right = Math.max(previousX, currentX) + collisionRange;
-  if (obstacle.position.x < left || obstacle.position.x > right) return false;
+  if (!hitbox) return null;
+  const sameFloor = Math.abs(groundHeight - obstacle.userData.floorY) <= 0.3;
+  if (!sameFloor) return null;
 
-  const playerBottom = jumpHeight;
-  const playerHeight = RUNNER_STANDING_HEIGHT * runner.scale.y;
-  const playerTop = playerBottom + playerHeight;
-  const verticalOverlap = playerBottom < hitbox.maxY && playerTop > hitbox.minY;
-  return verticalOverlap;
+  const obstacleHalfWidth = hitbox.halfWidth ?? 0.5;
+  const xDistance = Math.abs(obstacle.position.x - runner.position.x);
+  const sweptDistance = Math.max(0, xDistance - Math.abs(currentX - previousX));
+  if (sweptDistance > obstacleHalfWidth + RUNNER_HALF_WIDTH) return null;
+
+  const obstacleHalfDepth = hitbox.halfDepth ?? 0.35;
+  const zDistance = Math.abs(3.1 - runner.position.z);
+  if (zDistance > obstacleHalfDepth + RUNNER_HALF_DEPTH) return null;
+
+  const runnerBottom = Math.max(0, jumpHeight);
+  const runnerTop = runnerBottom + RUNNER_STANDING_HEIGHT * runner.scale.y;
+  const overlapY = runnerBottom < hitbox.maxY && runnerTop > hitbox.minY;
+  if (!overlapY) return null;
+
+  return {
+    kind: obstacle.userData.kind,
+    obstacleX: Number(obstacle.position.x.toFixed(2)),
+    runnerX: Number(runner.position.x.toFixed(2)),
+    floorY: Number(groundHeight.toFixed(2)),
+    obstacleFloorY: Number(obstacle.userData.floorY.toFixed(2)),
+    playerBottom: Number(runnerBottom.toFixed(2)),
+    playerTop: Number(runnerTop.toFixed(2)),
+    obstacleMinY: hitbox.minY,
+    obstacleMaxY: hitbox.maxY,
+    ducking,
+    jumpCount,
+    jumpHeight: Number(jumpHeight.toFixed(2)),
+    grounded,
+    previousY: Number(previousY.toFixed(2)),
+  };
 }
 
 function updateWorld(delta, time) {
@@ -153,9 +179,24 @@ function updateWorld(delta, time) {
   for (let i = obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = obstacles[i];
     const previousX = obstacle.position.x;
+    const previousPlayerY = jumpHeight;
     obstacle.position.x -= travel;
     if (obstacle.position.x < -13) { hazards.removeObstacle(i); continue; }
-    if (overlapsObstacle(obstacle, previousX, obstacle.position.x)) endGame();
+    const collision = collisionFor(obstacle, previousX, obstacle.position.x, previousPlayerY);
+    if (collision) {
+      if (DEBUG_COLLISIONS) console.error('[runner] obstacle collision', collision);
+      endGame(`obstacle:${obstacle.userData.kind}`);
+    } else if (DEBUG_COLLISIONS && Math.abs(obstacle.position.x - runner.position.x) < 1.8) {
+      console.debug('[runner] obstacle near (no collision)', {
+        kind: obstacle.userData.kind,
+        obstacleX: Number(obstacle.position.x.toFixed(2)),
+        runnerX: runner.position.x,
+        obstacleFloorY: obstacle.userData.floorY,
+        runnerFloorY: groundHeight,
+        jumpHeight: Number(jumpHeight.toFixed(2)),
+        ducking,
+      });
+    }
   }
   for (let i = pickups.length - 1; i >= 0; i -= 1) {
     const pickup = pickups[i];
@@ -181,6 +222,7 @@ function spawnContent() {
       const theme = spawn.theme || biomeFor(spawn.floorY);
       const kind = obstacleSequence % 3 === 0 || Math.random() < 0.2 ? 'duck' : 'jump';
       hazards.addObstacle(spawn.x, spawn.floorY, kind, theme);
+      if (DEBUG_COLLISIONS) console.info('[runner] obstacle spawned', { kind, x: Number(spawn.x.toFixed(2)), floorY: spawn.floorY, theme, hitbox: obstacles.at(-1)?.userData.hitbox });
       spawnClock = Math.max(1.6, 2.2 - speed * 0.025) + Math.random() * 0.65;
     } else spawnClock = 0.4;
   }
@@ -228,10 +270,9 @@ function animate() {
     }
 
     const { theme, surface } = updateWorld(delta, time);
-    // Only an actual hole is fatal. A jump can cross it; touching down over the
-    // opening ends the run. A landing on any platform resets the double-jump.
     if (surface.type === 'hole' && (grounded || jumpHeight <= 0)) {
-      endGame();
+      if (DEBUG_COLLISIONS) console.error('[runner] fell in route gap', { surface, x: runner.position.x, jumpHeight, jumpCount });
+      endGame('route-hole');
     } else if (jumpHeight <= 0 && surface.type !== 'hole') {
       jumpHeight = 0;
       jumpVelocity = 0;
