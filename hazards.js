@@ -43,8 +43,8 @@ export function createHazards(gameScene) {
 
     if (kind === 'duck') {
       const color = theme === 'sewer' ? materials.teal : materials.red;
-      // The double red cross-plank reads clearly as an overhead barrier. It can
-      // be ducked beneath, or cleared with a sufficiently high jump/double-jump.
+      // Collision matches the actual open duck-under region and the two overhead planks.
+      group.userData.hitbox = { halfWidth: 0.85, minY: 1.48, maxY: 2.52 };
       box(group, 2.15, 0.17, 0.46, materials.black, 0, 2.0, 0);
       box(group, 1.65, 0.42, 0.48, color, 0, 1.72, 0.08);
       box(group, 1.65, 0.24, 0.48, color, 0, 2.28, 0.08);
@@ -53,15 +53,18 @@ export function createHazards(gameScene) {
         box(group, 0.07, 0.5, 0.04, materials.white, stripe, 1.72, 0.34).rotation.z = -0.4;
       }
     } else if (theme === 'sewer') {
+      group.userData.hitbox = { halfWidth: 0.64, minY: 0, maxY: 0.92 };
       box(group, 1.25, 0.18, 0.65, materials.black, 0, 0.09, 0);
       const pipe = cylinder(group, 0.34, 0.34, 0.9, materials.sewer, 0, 0.55, 0.05, 10);
       pipe.rotation.z = Math.PI / 2;
       box(group, 0.72, 0.12, 0.4, materials.teal, 0, 0.78, 0.22);
     } else if (theme === 'clouds') {
+      group.userData.hitbox = { halfWidth: 0.5, minY: 0, maxY: 1.24 };
       box(group, 0.95, 0.14, 0.55, materials.black, 0, 0.07, 0);
       cylinder(group, 0.08, 0.25, 1.05, materials.gold, 0, 0.65, 0, 8);
       box(group, 0.5, 0.1, 0.18, materials.white, 0, 0.7, 0.22);
     } else {
+      group.userData.hitbox = { halfWidth: 0.76, minY: 0, maxY: 0.96 };
       box(group, 1.5, 0.28, 0.65, materials.concrete, 0, 0.14, 0);
       box(group, 1.35, 0.72, 0.38, materials.white, 0, 0.6, 0.08);
       for (const stripe of [-1, 1]) {

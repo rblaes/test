@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
-import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js?v=20261107-2';
+import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js?v=20261107-collision';
 import { createRunner } from './runner.js?v=20261107-1';
-import { createHazards } from './hazards.js?v=20261107-2';
+import { createHazards } from './hazards.js?v=20261107-collision';
 
 const game = document.querySelector('#game');
 const scoreElement = document.querySelector('#score');
@@ -33,6 +33,10 @@ const hazards = createHazards(scene);
 const obstacles = hazards.obstacles;
 const pickups = hazards.pickups;
 
+const RUNNER_HALF_WIDTH = 0.38;
+const RUNNER_STANDING_HEIGHT = 2.65;
+const DUCK_SCALE_Y = 0.46;
+const JUMP_GRAVITY = 25;
 let state = 'ready';
 let score = 0;
 let records = 0;
@@ -63,7 +67,7 @@ function showToast(message) {
   toastTimer = 1.1;
 }
 function setDucking(value) {
-  // Duck is a ground stance only; down input in the air cannot alter jump physics.
+  // Duck is a ground stance; pressing down in the air never changes jump physics.
   ducking = Boolean(value && state === 'running' && grounded);
   duckButton.classList.toggle('active', ducking);
 }
@@ -77,7 +81,6 @@ function jump() {
     grounded = false;
     jumpCount = 1;
   } else if (jumpCount === 1) {
-    // One mid-air jump gives enough airtime to clear the wide sewer pits.
     ducking = false;
     duckButton.classList.remove('active');
     jumpVelocity = 10.2;
@@ -112,7 +115,7 @@ function startGame() {
 function findFlatSpawn(startX) {
   for (let x = startX; x < startX + ROUTE_SPACING * 1.5; x += 0.35) {
     const surface = world.terrainAt(x);
-    if (surface.type === 'platform' || surface.type === 'road') return { x, floorY: surface.height, theme: surface.theme };
+    if (surface && (surface.type === 'platform' || surface.type === 'road')) return { x, floorY: surface.height, theme: surface.theme };
   }
   return null;
 }
@@ -122,6 +125,25 @@ function biomeFor(height) {
   if (height >= 2.2) return 'rooftop';
   return 'street';
 }
+
+// Resolve collisions against explicit obstacle hitboxes. Horizontal motion is swept
+// across the frame so fast movement cannot skip through a narrow obstacle.
+function overlapsObstacle(obstacle, previousX, currentX) {
+  const hitbox = obstacle.userData.hitbox;
+  if (!hitbox || Math.abs(groundHeight - obstacle.userData.floorY) > 0.3) return false;
+  const playerHalfWidth = RUNNER_HALF_WIDTH;
+  const collisionRange = hitbox.halfWidth + playerHalfWidth;
+  const left = Math.min(previousX, currentX) - collisionRange;
+  const right = Math.max(previousX, currentX) + collisionRange;
+  if (obstacle.position.x < left || obstacle.position.x > right) return false;
+
+  const playerBottom = jumpHeight;
+  const playerHeight = RUNNER_STANDING_HEIGHT * runner.scale.y;
+  const playerTop = playerBottom + playerHeight;
+  const verticalOverlap = playerBottom < hitbox.maxY && playerTop > hitbox.minY;
+  return verticalOverlap;
+}
+
 function updateWorld(delta, time) {
   const travel = speed * delta;
   const surface = world.terrainAt(runner.position.x);
@@ -130,24 +152,24 @@ function updateWorld(delta, time) {
 
   for (let i = obstacles.length - 1; i >= 0; i -= 1) {
     const obstacle = obstacles[i];
+    const previousX = obstacle.position.x;
     obstacle.position.x -= travel;
-    if (obstacle.position.x < -13) { scene.remove(obstacle); obstacles.splice(i, 1); continue; }
-    if (Math.abs(obstacle.position.x - runner.position.x) < 0.9 && !obstacle.userData.checked) {
-      obstacle.userData.checked = true;
-      const sameFloor = Math.abs(groundHeight - obstacle.userData.floorY) < 0.25;
-      const cleared = obstacle.userData.kind === 'duck' ? ducking : jumpHeight > 0.66;
-      if (sameFloor && !cleared) endGame();
-    }
+    if (obstacle.position.x < -13) { hazards.removeObstacle(i); continue; }
+    if (overlapsObstacle(obstacle, previousX, obstacle.position.x)) endGame();
   }
   for (let i = pickups.length - 1; i >= 0; i -= 1) {
     const pickup = pickups[i];
     pickup.position.x -= travel;
-    pickup.rotation.x += delta * 2.2; pickup.rotation.y += delta * 1.7;
+    pickup.rotation.x += delta * 2.2;
+    pickup.rotation.y += delta * 1.7;
     pickup.position.y = pickup.userData.baseY + Math.sin(time * 3 + pickup.userData.phase) * 0.12;
     if (Math.abs(pickup.position.x - runner.position.x) < 0.85 && Math.abs(pickup.position.y - (runner.position.y + 1.5)) < 1.5) {
-      scene.remove(pickup); pickups.splice(i, 1); records += 1; score += 100;
-      showToast('♪  +100  GOLD RECORD'); updateHud();
-    } else if (pickup.position.x < -13) { scene.remove(pickup); pickups.splice(i, 1); }
+      hazards.removePickup(i);
+      records += 1;
+      score += 100;
+      showToast('♪  +100  GOLD RECORD');
+      updateHud();
+    } else if (pickup.position.x < -13) hazards.removePickup(i);
   }
   return { theme, surface };
 }
@@ -189,26 +211,32 @@ function animate() {
   const delta = Math.min(clock.getDelta(), 0.04);
   const time = clock.elapsedTime;
   if (state === 'running') {
-    score += delta * speed * 1.8; speed = Math.min(17, speed + delta * 0.12);
-    spawnClock -= delta; pickupClock -= delta; spawnContent();
+    score += delta * speed * 1.8;
+    speed = Math.min(17, speed + delta * 0.12);
+    spawnClock -= delta;
+    pickupClock -= delta;
+    spawnContent();
 
     if (grounded && ducking) {
-      runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 0.55, Math.min(1, delta * 18));
+      runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, DUCK_SCALE_Y, Math.min(1, delta * 18));
     } else {
       runner.scale.y = THREE.MathUtils.lerp(runner.scale.y, 1, Math.min(1, delta * 16));
       if (!grounded) {
-        jumpVelocity -= 25 * delta;
+        jumpVelocity -= JUMP_GRAVITY * delta;
         jumpHeight += jumpVelocity * delta;
       }
     }
 
     const { theme, surface } = updateWorld(delta, time);
-    // A hole has no ground: only a live jump can carry the runner over it.
+    // Only an actual hole is fatal. A jump can cross it; touching down over the
+    // opening ends the run. A landing on any platform resets the double-jump.
     if (surface.type === 'hole' && (grounded || jumpHeight <= 0)) {
       endGame();
-    }
-    if (jumpHeight <= 0 && surface.type !== 'hole') {
-      jumpHeight = 0; jumpVelocity = 0; grounded = true; jumpCount = 0;
+    } else if (jumpHeight <= 0 && surface.type !== 'hole') {
+      jumpHeight = 0;
+      jumpVelocity = 0;
+      grounded = true;
+      jumpCount = 0;
     }
     runner.position.y = groundHeight + Math.max(0, jumpHeight);
     const stride = grounded && !ducking ? Math.sin(time * speed * 1.45) : 0.25;
@@ -225,8 +253,11 @@ function animate() {
     updateHud();
   } else {
     runner.position.y = ROAD_Y + Math.abs(Math.sin(time * 2)) * 0.06;
-    runner.scale.y = 1; leftArm.rotation.z = -0.3 + Math.sin(time * 2) * 0.08; rightArm.rotation.z = 0.3;
-    camera.position.y = CAMERA_FOCUS_OFFSET; camera.lookAt(0, CAMERA_FOCUS_OFFSET, 0);
+    runner.scale.y = 1;
+    leftArm.rotation.z = -0.3 + Math.sin(time * 2) * 0.08;
+    rightArm.rotation.z = 0.3;
+    camera.position.y = CAMERA_FOCUS_OFFSET;
+    camera.lookAt(0, CAMERA_FOCUS_OFFSET, 0);
     for (const cloud of world.cloudGroups) cloud.visible = false;
   }
   if (toastTimer > 0 && (toastTimer -= delta) <= 0) toast.classList.remove('visible');
@@ -235,9 +266,12 @@ function animate() {
 function resize() {
   const aspect = window.innerWidth / window.innerHeight;
   const viewHeight = 12;
-  camera.left = -viewHeight * aspect / 2; camera.right = viewHeight * aspect / 2;
-  camera.top = viewHeight / 2; camera.bottom = -viewHeight / 2;
-  camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.left = -viewHeight * aspect / 2;
+  camera.right = viewHeight * aspect / 2;
+  camera.top = viewHeight / 2;
+  camera.bottom = -viewHeight / 2;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 window.addEventListener('resize', resize);
 resize(); updateHud(); animate();
