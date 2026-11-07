@@ -26,31 +26,80 @@ export function cylinder(parent, radiusTop, radiusBottom, height, material, x, y
 export const ROAD_Y = 0.2;
 export const STEP_WIDTH = 0.72;
 export const STEP_RISE = 0.3;
-const UP_FLIGHTS = 6;
-const DOWN_FLIGHTS = 10;
 const UP_STEPS = 3;
 const DOWN_STEPS = 4;
-const PLATFORM = 32;
-const GAP_STEPS = 5;
-const pattern = [{ type: 'platform', count: PLATFORM, theme: 'street' }];
-for (let i = 0; i < UP_FLIGHTS; i += 1) {
-  pattern.push({ type: 'stairs', count: UP_STEPS, direction: 1 });
-  const level = (i + 1) * UP_STEPS * STEP_RISE;
-  pattern.push({ type: 'platform', count: PLATFORM, theme: level >= 4.2 ? 'clouds' : level >= 2.1 ? 'rooftop' : 'street' });
-}
-for (let i = 0; i < DOWN_FLIGHTS; i += 1) {
-  pattern.push({ type: 'stairs', count: DOWN_STEPS, direction: -1 });
-  const level = UP_FLIGHTS * UP_STEPS * STEP_RISE - (i + 1) * DOWN_STEPS * STEP_RISE;
-  const theme = level < 0 ? 'sewer' : level >= 4.2 ? 'clouds' : level >= 2.1 ? 'rooftop' : 'street';
-  if (theme === 'sewer') {
-    pattern.push({ type: 'platform', count: 13, theme }, { type: 'hole', count: GAP_STEPS, theme },
-      { type: 'platform', count: 13, theme }, { type: 'hole', count: GAP_STEPS, theme }, { type: 'platform', count: 16, theme });
-  } else pattern.push({ type: 'platform', count: PLATFORM, theme });
-}
-export const ROUTE_LENGTH = pattern.reduce((sum, item) => sum + item.count * STEP_WIDTH, 0);
+// Every route chunk has the same length and returns to street height at its end,
+// but receives a fresh randomized layout when generated and whenever recycled.
+const CHUNK_STEPS = 420;
+export const ROUTE_LENGTH = CHUNK_STEPS * STEP_WIDTH;
 export const ROUTE_SPACING = ROUTE_LENGTH;
-export const CLOUD_LEVEL = ROAD_Y + UP_FLIGHTS * UP_STEPS * STEP_RISE;
-export const SEWER_LEVEL = ROAD_Y + (UP_FLIGHTS * UP_STEPS - DOWN_FLIGHTS * DOWN_STEPS) * STEP_RISE;
+export const CLOUD_LEVEL = ROAD_Y + 14 * STEP_RISE;
+export const SEWER_LEVEL = ROAD_Y - 18 * STEP_RISE;
+
+const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const themeAtLevel = (level) => {
+  const y = ROAD_Y + level * STEP_RISE;
+  if (y < ROAD_Y - 0.05) return 'sewer';
+  if (y >= CLOUD_LEVEL - 0.5) return 'clouds';
+  if (y >= 2.2) return 'rooftop';
+  return 'street';
+};
+
+function generatePattern() {
+  const pattern = [];
+  let remaining = CHUNK_STEPS;
+  let level = 0;
+
+  function addPlatform(count) {
+    const theme = themeAtLevel(level);
+    let left = count;
+    while (left > 0) {
+      // Sewer runs get occasional real gaps, with variable spacing and widths.
+      if (theme === 'sewer' && left >= 18 && Math.random() < 0.24) {
+        const safeRun = Math.min(left - 4, randomInt(9, 23));
+        pattern.push({ type: 'platform', count: safeRun, theme });
+        left -= safeRun;
+        const gap = Math.min(left, randomInt(3, 5));
+        if (gap > 0) {
+          pattern.push({ type: 'hole', count: gap, theme });
+          left -= gap;
+        }
+      } else {
+        const run = Math.min(left, randomInt(12, 42));
+        pattern.push({ type: 'platform', count: run, theme });
+        left -= run;
+      }
+    }
+  }
+
+  while (remaining > Math.abs(level) + 20) {
+    // Keep a minimum viable return staircase in reserve so chunks join seamlessly.
+    const maxFlat = remaining - Math.abs(level) - 1;
+    const flat = Math.min(maxFlat, randomInt(20, 58));
+    if (flat > 0) {
+      addPlatform(flat);
+      remaining -= flat;
+    }
+
+    if (remaining <= Math.abs(level) + 24 || Math.random() > 0.62) continue;
+    const target = randomInt(-18, 19);
+    const riseCount = Math.abs(target - level);
+    if (target === level || remaining - riseCount < Math.abs(target) + 20) continue;
+    pattern.push({ type: 'stairs', count: riseCount, direction: Math.sign(target - level) });
+    remaining -= riseCount;
+    level = target;
+  }
+
+  // Return each chunk to street level; the remaining budget was reserved above.
+  if (level !== 0) {
+    const returnCount = Math.abs(level);
+    pattern.push({ type: 'stairs', count: returnCount, direction: -Math.sign(level) });
+    remaining -= returnCount;
+    level = 0;
+  }
+  if (remaining > 0) addPlatform(remaining);
+  return pattern;
+}
 
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 const dummy = new THREE.Object3D();
@@ -62,26 +111,36 @@ function addInstances(parent, material, items) {
     dummy.position.set(v.x, v.y, v.z); dummy.scale.set(v.w, v.h, v.d); dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix);
   });
-  mesh.instanceMatrix.needsUpdate = true; parent.add(mesh);
+  mesh.instanceMatrix.needsUpdate = true;
+  parent.add(mesh);
 }
-function makeRoute(scene, startX) {
-  const group = new THREE.Group();
+
+function populateRoute(route) {
+  // Route meshes share unit geometry and palette materials, so old instances can be
+  // removed and replaced without allocating or disposing shared resources.
+  route.group.clear();
+  const pattern = generatePattern();
   const supportStreet = [], supportSewer = [], topRoad = [], topStairs = [], topSewer = [], edges = [], pits = [], surfaces = [];
-  let cursor = 0, level = 0, theme = 'street';
+  let cursor = 0;
+  let level = 0;
   for (const segment of pattern) {
-    if (segment.theme) theme = segment.theme;
     for (let i = 0; i < segment.count; i += 1) {
       if (segment.type === 'stairs') level += segment.direction * STEP_RISE;
-      const top = ROAD_Y + level, x = cursor + STEP_WIDTH / 2;
+      const top = ROAD_Y + level;
+      const x = cursor + STEP_WIDTH / 2;
+      const theme = segment.theme || themeAtLevel(level);
       if (segment.type === 'hole') {
         pits.push({ x, y: top - 4.2, z: -3.3, w: STEP_WIDTH + 0.02, h: 0.1, d: 1.4 });
         edges.push({ x, y: top + 0.02, z: -0.15, w: STEP_WIDTH + 0.02, h: 0.035, d: 0.06 });
         surfaces.push({ start: cursor, end: cursor + STEP_WIDTH, height: top, type: 'hole', theme });
-        cursor += STEP_WIDTH; continue;
+        cursor += STEP_WIDTH;
+        continue;
       }
-      const lower = Math.min(ROAD_Y, top), fillH = Math.max(0.06, Math.abs(top - ROAD_Y));
+      const lower = Math.min(ROAD_Y, top);
+      const fillH = Math.max(0.06, Math.abs(top - ROAD_Y));
       const underground = theme === 'sewer';
       if (underground) {
+        // Sparse translucent piers remain behind the runner; open space stays visible.
         if (segment.type === 'platform' && i % 4 === 1) {
           supportSewer.push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2, z: -4.25, w: 0.2, h: fillH, d: 0.42 });
         }
@@ -100,80 +159,138 @@ function makeRoute(scene, startX) {
       cursor += STEP_WIDTH;
     }
   }
-  const archMaterial = new THREE.MeshStandardMaterial({ color: 0x39716d, roughness: 0.9, transparent: true, opacity: 0.12, depthWrite: false });
+
   const arches = [];
   for (let i = 0; i < surfaces.length; i += 1) {
-    const s = surfaces[i];
-    if (s.theme !== 'sewer' || s.type !== 'platform' || i % 16 !== 2) continue;
-    arches.push({ x: s.start, y: s.height + 2.5, z: -4.6, w: 0.12, h: 5, d: 0.12 });
+    const surface = surfaces[i];
+    if (surface.theme !== 'sewer' || surface.type !== 'platform' || i % 16 !== 2) continue;
+    arches.push({ x: surface.start, y: surface.height + 2.5, z: -4.6, w: 0.12, h: 5, d: 0.12 });
   }
-  addInstances(group, materials.stair, supportStreet); addInstances(group, materials.sewerSupport, supportSewer);
-  addInstances(group, materials.road, topRoad); addInstances(group, materials.stairTop, topStairs);
-  addInstances(group, materials.sewerDeck, topSewer); addInstances(group, materials.stairEdge, edges);
-  addInstances(group, archMaterial, arches); addInstances(group, materials.pit, pits);
-  group.position.x = startX; scene.add(group); return { group, surfaces };
+  addInstances(route.group, materials.stair, supportStreet);
+  addInstances(route.group, materials.sewerSupport, supportSewer);
+  addInstances(route.group, materials.road, topRoad);
+  addInstances(route.group, materials.stairTop, topStairs);
+  addInstances(route.group, materials.sewerDeck, topSewer);
+  addInstances(route.group, materials.stairEdge, edges);
+  addInstances(route.group, materials.sewerSupport, arches);
+  addInstances(route.group, materials.pit, pits);
+  route.surfaces = surfaces;
+}
+
+function makeRoute(scene, startX) {
+  const route = { group: new THREE.Group(), surfaces: [] };
+  route.group.position.x = startX;
+  scene.add(route.group);
+  populateRoute(route);
+  return route;
 }
 
 export function createWorld(scene) {
-  const sky = new THREE.Color(0x07111e), sewerSky = new THREE.Color(0x071a1a);
-  scene.background = sky.clone(); scene.fog = new THREE.Fog(sky, 22, 65);
+  const sky = new THREE.Color(0x07111e);
+  const sewerSky = new THREE.Color(0x071a1a);
+  scene.background = sky.clone();
+  scene.fog = new THREE.Fog(sky, 22, 65);
   scene.add(new THREE.HemisphereLight(0xb9d8ff, 0x22131a, 2));
-  const moonLight = new THREE.DirectionalLight(0xb8d9ff, 2.3); moonLight.position.set(-5, 12, 12); scene.add(moonLight);
-  const sewerLight = new THREE.PointLight(0x35d5b0, 0, 24, 2); sewerLight.position.set(-3, 0, 4); scene.add(sewerLight);
+  const moonLight = new THREE.DirectionalLight(0xb8d9ff, 2.3);
+  moonLight.position.set(-5, 12, 12);
+  scene.add(moonLight);
+  const sewerLight = new THREE.PointLight(0x35d5b0, 0, 24, 2);
+  sewerLight.position.set(-3, 0, 4);
+  scene.add(sewerLight);
   const moon = new THREE.Mesh(new THREE.SphereGeometry(1.05, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffdca1 }));
-  moon.position.set(7.4, 8.35, -10); scene.add(moon);
+  moon.position.set(7.4, 8.35, -10);
+  scene.add(moon);
   const halo = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.035, 8, 48), new THREE.MeshBasicMaterial({ color: 0xe9a75b, transparent: true, opacity: 0.45 }));
-  halo.position.copy(moon.position); scene.add(halo);
+  halo.position.copy(moon.position);
+  scene.add(halo);
   const stars = [];
   for (let i = 0; i < 145; i += 1) stars.push(-42 + Math.random() * 84, 3 + Math.random() * 12, -12);
-  const starGeo = new THREE.BufferGeometry(); starGeo.setAttribute('position', new THREE.Float32BufferAttribute(stars, 3));
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute('position', new THREE.Float32BufferAttribute(stars, 3));
   scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xd8e9ff, size: 0.075 })));
   box(scene, 800, 0.6, 3.6, materials.road, 300, -0.3, -3.6);
   const laneMarkers = [];
   for (let i = 0; i < 24; i += 1) laneMarkers.push(box(scene, 2.2, 0.08, 0.05, materials.white, -22 + i * 4.8, 0.23, -0.8));
-  const buildings = [], colors = [0x182338, 0x20243a, 0x25212b, 0x152a39];
+  const buildings = [];
+  const colors = [0x182338, 0x20243a, 0x25212b, 0x152a39];
   for (let i = 0; i < 14; i += 1) {
-    const g = new THREE.Group(), w = 3.7 + Math.random() * 2.7, h = 5 + Math.random() * 9, d = 1.5 + Math.random() * 2;
-    box(g, w, h, d, mat(colors[i % colors.length]), 0, h / 2 + 0.3, -5.2);
+    const building = new THREE.Group();
+    const w = 3.7 + Math.random() * 2.7;
+    const h = 5 + Math.random() * 9;
+    const d = 1.5 + Math.random() * 2;
+    box(building, w, h, d, mat(colors[i % colors.length]), 0, h / 2 + 0.3, -5.2);
     const facade = -5.2 + d / 2 + 0.04;
-    for (let row = 0; row < Math.floor(h / 1.45); row += 1) for (let col = 0; col < Math.max(2, Math.floor(w / 1.15)); col += 1) {
-      if (Math.random() < 0.56) box(g, 0.4, 0.55, 0.035, Math.random() > 0.25 ? materials.window : materials.glow, -w / 2 + 0.58 + col * 1.05, 1.2 + row * 1.35, facade);
+    for (let row = 0; row < Math.floor(h / 1.45); row += 1) {
+      for (let col = 0; col < Math.max(2, Math.floor(w / 1.15)); col += 1) {
+        if (Math.random() < 0.56) box(building, 0.4, 0.55, 0.035, Math.random() > 0.25 ? materials.window : materials.glow,
+          -w / 2 + 0.58 + col * 1.05, 1.2 + row * 1.35, facade);
+      }
     }
-    g.position.x = -28 + i * 10; scene.add(g); buildings.push(g);
+    building.position.x = -28 + i * 10;
+    scene.add(building);
+    buildings.push(building);
   }
-  const cloudGroups = [], cloudMaterials = [];
+  const cloudGroups = [];
+  const cloudMaterials = [];
   for (let i = 0; i < 9; i += 1) {
-    const g = new THREE.Group(), cm = new THREE.MeshStandardMaterial({ color: 0xb8cee0, roughness: 1, transparent: true, opacity: 0, depthWrite: false });
-    cloudMaterials.push(cm);
-    for (const [x, y, r] of [[0, 0, 1.1], [0.85, 0.08, 0.8], [-0.8, 0.04, 0.72], [0.25, 0.48, 0.68]]) {
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), cm); puff.position.set(x, y, 0); g.add(puff);
+    const cloud = new THREE.Group();
+    const cloudMaterial = new THREE.MeshStandardMaterial({ color: 0xb8cee0, roughness: 1, transparent: true, opacity: 0, depthWrite: false });
+    cloudMaterials.push(cloudMaterial);
+    for (const [x, y, radius] of [[0, 0, 1.1], [0.85, 0.08, 0.8], [-0.8, 0.04, 0.72], [0.25, 0.48, 0.68]]) {
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(radius, 10, 8), cloudMaterial);
+      puff.position.set(x, y, 0);
+      cloud.add(puff);
     }
-    g.position.set(-30 + i * 13, CLOUD_LEVEL + 2.8, -7.5); scene.add(g); cloudGroups.push(g);
+    cloud.position.set(-30 + i * 13, CLOUD_LEVEL + 2.8, -7.5);
+    scene.add(cloud);
+    cloudGroups.push(cloud);
   }
+
   const routes = [];
   for (let i = 0; i < 4; i += 1) routes.push(makeRoute(scene, 17 + i * ROUTE_SPACING));
   function terrainAt(x) {
     for (const route of routes) {
       const local = x - route.group.position.x;
-      if (local >= 0 && local < ROUTE_LENGTH) return route.surfaces[Math.min(route.surfaces.length - 1, Math.floor(local / STEP_WIDTH))];
+      if (local >= 0 && local < ROUTE_LENGTH) {
+        return route.surfaces[Math.min(route.surfaces.length - 1, Math.floor(local / STEP_WIDTH))];
+      }
     }
     return { height: ROAD_Y, type: 'road', theme: 'street' };
   }
   function update(delta, height, travel) {
-    for (const marker of laneMarkers) { marker.position.x -= travel; if (marker.position.x < -24) marker.position.x += 115.2; }
-    for (const g of buildings) { g.position.x -= travel * 0.23; if (g.position.x < -32) g.position.x += 140; }
-    const fade = THREE.MathUtils.smoothstep(height, CLOUD_LEVEL - 4.2, CLOUD_LEVEL - 0.4);
-    for (let i = 0; i < cloudGroups.length; i += 1) {
-      const g = cloudGroups[i]; g.position.x -= travel * 0.16; if (g.position.x < -38) g.position.x += 117;
-      g.visible = fade > 0.005; cloudMaterials[i].opacity = fade * 0.62;
+    for (const marker of laneMarkers) {
+      marker.position.x -= travel;
+      if (marker.position.x < -24) marker.position.x += 115.2;
     }
-    for (const route of routes) { route.group.position.x -= travel; if (route.group.position.x + ROUTE_LENGTH < -5.3) route.group.position.x += ROUTE_SPACING * routes.length; }
+    for (const building of buildings) {
+      building.position.x -= travel * 0.23;
+      if (building.position.x < -32) building.position.x += 140;
+    }
+    const cloudFade = THREE.MathUtils.smoothstep(height, CLOUD_LEVEL - 4.2, CLOUD_LEVEL - 0.4);
+    for (let i = 0; i < cloudGroups.length; i += 1) {
+      const cloud = cloudGroups[i];
+      cloud.position.x -= travel * 0.16;
+      if (cloud.position.x < -38) cloud.position.x += 117;
+      cloud.visible = cloudFade > 0.005;
+      cloudMaterials[i].opacity = cloudFade * 0.62;
+    }
+    for (const route of routes) {
+      route.group.position.x -= travel;
+      if (route.group.position.x + ROUTE_LENGTH < -5.3) {
+        route.group.position.x += ROUTE_SPACING * routes.length;
+        // Generate a new independent terrain chunk instead of replaying a fixed course.
+        populateRoute(route);
+      }
+    }
     const theme = height < ROAD_Y - 0.05 ? 'sewer' : height >= CLOUD_LEVEL - 0.5 ? 'clouds' : height >= 2.2 ? 'rooftop' : 'street';
-    scene.background.lerp(theme === 'sewer' ? sewerSky : sky, Math.min(1, delta * 1.5)); scene.fog.color.copy(scene.background);
-    scene.fog.near = theme === 'sewer' ? 16 : 22; scene.fog.far = theme === 'sewer' ? 52 : 65;
+    scene.background.lerp(theme === 'sewer' ? sewerSky : sky, Math.min(1, delta * 1.5));
+    scene.fog.color.copy(scene.background);
+    scene.fog.near = theme === 'sewer' ? 16 : 22;
+    scene.fog.far = theme === 'sewer' ? 52 : 65;
     sewerLight.position.y = height + 2.8;
     sewerLight.intensity = THREE.MathUtils.damp(sewerLight.intensity, theme === 'sewer' ? 8 : 0, 3, delta);
-    moonLight.intensity = theme === 'clouds' ? 1.2 : 2.3; return theme;
+    moonLight.intensity = theme === 'clouds' ? 1.2 : 2.3;
+    return theme;
   }
   return { routes, laneMarkers, buildings, cloudGroups, terrainAt, update, moonLight, sewerLight };
 }
