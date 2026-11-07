@@ -43,8 +43,11 @@ export function createHazards(gameScene) {
 
     if (kind === 'duck') {
       const color = theme === 'sewer' ? materials.teal : materials.red;
+      // The double red cross-plank reads clearly as an overhead barrier. It can
+      // be ducked beneath, or cleared with a sufficiently high jump/double-jump.
       box(group, 2.15, 0.17, 0.46, materials.black, 0, 2.0, 0);
-      box(group, 1.65, 0.55, 0.48, color, 0, 1.72, 0.08);
+      box(group, 1.65, 0.42, 0.48, color, 0, 1.72, 0.08);
+      box(group, 1.65, 0.24, 0.48, color, 0, 2.28, 0.08);
       for (const side of [-0.52, 0.52]) box(group, 0.12, 1.7, 0.14, materials.black, side, 2.55, 0);
       for (const stripe of [-0.45, -0.15, 0.15, 0.45]) {
         box(group, 0.07, 0.5, 0.04, materials.white, stripe, 1.72, 0.34).rotation.z = -0.4;
