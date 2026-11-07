@@ -9,6 +9,7 @@ export const materials = {
   record: new THREE.MeshStandardMaterial({ color: 0xd8a64d, metalness: 0.55, roughness: 0.3, emissive: 0x4c2608 }),
   stair: mat(0x343f50, 0.88), stairTop: mat(0x596273, 0.78), stairEdge: mat(0xb18a5e, 0.62),
   rail: mat(0x252d39, 0.45, 0.55), sewer: mat(0x26494a, 0.75, 0.18), teal: mat(0x38d6bd, 0.35, 0.1),
+  sewerSupport: new THREE.MeshStandardMaterial({ color: 0x39716d, roughness: 0.9, transparent: true, opacity: 0.32, depthWrite: false }),
   pit: new THREE.MeshStandardMaterial({ color: 0x020609, roughness: 1 }),
 };
 
@@ -78,14 +79,23 @@ function makeRoute(scene, startX) {
       }
       const lower = Math.min(ROAD_Y, top), fillH = Math.max(0.06, Math.abs(top - ROAD_Y));
       const underground = theme === 'sewer';
-      (underground ? supportSewer : supportStreet).push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2,
-        z: underground ? -4.4 : -3.5, w: STEP_WIDTH + 0.025, h: fillH, d: underground ? 1.2 : 2.8 });
-      const group = underground ? topSewer : segment.type === 'stairs' ? topStairs : topRoad;
-      // Sewer walk deck is only in the far background depth; its nearest face is
-      // z=-0.8, leaving a clear depth gap before the runner at z=2.7.
+      if (underground) {
+        // Interlace narrow, translucent piers with open bays instead of a solid sewer wall.
+        // This keeps the lower level readable and lets players see hazards through the structure.
+        if (segment.type === 'platform' && i % 4 === 1) {
+          supportSewer.push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2,
+            z: -4.25, w: 0.2, h: fillH, d: 0.42 });
+        }
+      } else {
+        supportStreet.push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2,
+          z: -3.5, w: STEP_WIDTH + 0.025, h: fillH, d: 2.8 });
+      }
+      const routeTop = underground ? topSewer : segment.type === 'stairs' ? topStairs : topRoad;
+      // Sewer walk deck stays behind the runner. Its continuous top marks the safe path;
+      // the structure below it is deliberately open and translucent.
       const depth = underground ? 1.2 : 4.6;
       const centerZ = underground ? -1.4 : -0.25;
-      group.push({ x, y: top - 0.0375, z: centerZ, w: STEP_WIDTH + 0.04, h: 0.075, d: depth });
+      routeTop.push({ x, y: top - 0.0375, z: centerZ, w: STEP_WIDTH + 0.04, h: 0.075, d: depth });
       if (segment.type === 'stairs') edges.push({ x, y: top + 0.005, z: 0.2, w: STEP_WIDTH + 0.04, h: 0.045, d: 0.08 });
       if (underground && segment.type === 'platform' && i % 4 === 1) {
         edges.push({ x, y: top + 0.12, z: -0.55, w: 0.16, h: 0.08, d: 0.12 });
@@ -101,7 +111,7 @@ function makeRoute(scene, startX) {
     if (s.theme !== 'sewer' || s.type !== 'platform' || i % 16 !== 2) continue;
     arches.push({ x: s.start, y: s.height + 2.5, z: -4.6, w: 0.12, h: 5, d: 0.12 });
   }
-  addInstances(group, materials.stair, supportStreet); addInstances(group, materials.sewer, supportSewer);
+  addInstances(group, materials.stair, supportStreet); addInstances(group, materials.sewerSupport, supportSewer);
   addInstances(group, materials.road, topRoad); addInstances(group, materials.stairTop, topStairs);
   addInstances(group, materials.sewer, topSewer); addInstances(group, materials.stairEdge, edges);
   addInstances(group, archMaterial, arches); addInstances(group, materials.pit, pits);
