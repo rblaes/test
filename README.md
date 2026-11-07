@@ -1,21 +1,19 @@
 # Midnight Rhythm — 3D Runner
 
-An original Three.js endless runner. Run, jump and duck through a Chicago-inspired night route that climbs to rooftops and clouds, then descends through the street into a sewer. Obstacles and collectibles match each biome and appear on level surfaces.
+An original Three.js endless runner with six gradual climbs and six descents through long level sections: street, rooftops, clouds and multiple underground sewer depths. Jump and duck through biome-specific hazards while collecting records.
 
 ## Run
-
-Serve the project locally (ES modules are not reliably supported from `file://` URLs):
 
 ```bash
 python3 -m http.server 8000
 ```
 
-Then visit <http://localhost:8000>.
+Open <http://localhost:8000>. ES modules need a local web server. The game loads Three.js 0.160.1 from jsDelivr.
 
 ## Controls
 
 - **Space**, **Up arrow**, or **W**: jump
 - **Down arrow**, **S**, or **Shift**: hold to duck
-- On touch screens, hold **DUCK** and tap **JUMP**
+- Touch controls: tap **JUMP**, hold **DUCK**
 
-The JavaScript is split into ES modules (`script.js`, `world.js`, `runner.js`, and `hazards.js`) to keep each source file manageable. Three.js 0.160.1 loads from jsDelivr, so an internet connection is currently required on the first load.
+Route surfaces are instanced to reduce draw calls and prevent the game slowing down over time. Sewer tunnel ribs are translucent and placed behind the play lane, so they frame rather than obscure the runner.
