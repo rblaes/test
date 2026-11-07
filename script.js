@@ -29,8 +29,6 @@ game.prepend(renderer.domElement);
 
 const world = createWorld(scene);
 const { runner, leftArm, rightArm, leftLeg, rightLeg } = createRunner(scene);
-// Pass the exact scene instance to the hazards module. It must use this argument
-// for adding and removing its objects, never an implicit global named `scene`.
 const hazards = createHazards(scene);
 const obstacles = hazards.obstacles;
 const pickups = hazards.pickups;

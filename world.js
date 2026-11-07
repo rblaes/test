@@ -9,6 +9,7 @@ export const materials = {
   record: new THREE.MeshStandardMaterial({ color: 0xd8a64d, metalness: 0.55, roughness: 0.3, emissive: 0x4c2608 }),
   stair: mat(0x343f50, 0.88), stairTop: mat(0x596273, 0.78), stairEdge: mat(0xb18a5e, 0.62),
   rail: mat(0x252d39, 0.45, 0.55), sewer: mat(0x26494a, 0.75, 0.18), teal: mat(0x38d6bd, 0.35, 0.1),
+  pit: new THREE.MeshStandardMaterial({ color: 0x020609, emissive: 0x000000, roughness: 1 }),
 };
 
 export function box(parent, width, height, depth, material, x, y, z = 0) {
@@ -41,7 +42,17 @@ for (let i = 0; i < UP_FLIGHTS; i += 1) {
 for (let i = 0; i < DOWN_FLIGHTS; i += 1) {
   ROUTE_PATTERN.push({ type: 'stairs', count: DOWN_STEPS_PER_FLIGHT, direction: -1 });
   const level = UP_FLIGHTS * UP_STEPS_PER_FLIGHT * STEP_RISE - (i + 1) * DOWN_STEPS_PER_FLIGHT * STEP_RISE;
-  ROUTE_PATTERN.push({ type: 'platform', count: PLATFORM_TILES, theme: level < 0 ? 'sewer' : level >= 4.2 ? 'clouds' : level >= 2.1 ? 'rooftop' : 'street' });
+  const theme = level < 0 ? 'sewer' : level >= 4.2 ? 'clouds' : level >= 2.1 ? 'rooftop' : 'street';
+  if (theme === 'sewer') {
+    // Two underground floors with open bottomless gaps between safe landing sections.
+    ROUTE_PATTERN.push({ type: 'platform', count: 13, theme });
+    ROUTE_PATTERN.push({ type: 'hole', count: 3, theme });
+    ROUTE_PATTERN.push({ type: 'platform', count: 13, theme });
+    ROUTE_PATTERN.push({ type: 'hole', count: 3, theme });
+    ROUTE_PATTERN.push({ type: 'platform', count: 16, theme });
+  } else {
+    ROUTE_PATTERN.push({ type: 'platform', count: PLATFORM_TILES, theme });
+  }
 }
 export const ROUTE_LENGTH = ROUTE_PATTERN.reduce((sum, segment) => sum + segment.count * STEP_WIDTH, 0);
 export const ROUTE_SPACING = ROUTE_LENGTH;
@@ -70,46 +81,58 @@ function createRoute(scene, startX) {
   const tops = { road: [], stair: [], sewer: [] };
   const edges = [];
   const arches = [];
+  const pits = [];
   const surfaces = [];
   let cursor = 0;
   let level = 0;
   let theme = 'street';
   for (const segment of ROUTE_PATTERN) {
-    if (segment.type === 'platform') theme = segment.theme;
+    if (segment.theme) theme = segment.theme;
     for (let i = 0; i < segment.count; i += 1) {
       if (segment.type === 'stairs') level += segment.direction * STEP_RISE;
       const top = ROAD_Y + level;
       const x = cursor + STEP_WIDTH / 2;
+      if (segment.type === 'hole') {
+        // No support or walkable top is generated here: the gap is genuinely open.
+        // A dim pit far below adds depth without creating a surface to land on.
+        pits.push({ x, y: top - 4.2, z: -2.5, w: STEP_WIDTH + 0.02, h: 0.1, d: 3.5 });
+        for (const edgeZ of [-0.2, 2.18]) {
+          edges.push({ x, y: top + 0.018, z: edgeZ, w: STEP_WIDTH + 0.02, h: 0.035, d: 0.06 });
+        }
+        surfaces.push({ start: cursor, end: cursor + STEP_WIDTH, height: top, type: 'hole', theme });
+        cursor += STEP_WIDTH;
+        continue;
+      }
       const lower = Math.min(ROAD_Y, top);
       const height = Math.max(0.06, Math.abs(top - ROAD_Y));
-      // Structural fill sits behind the running lane. It must not form an opaque
-      // foreground wall when the route drops below street level.
       const underground = theme === 'sewer';
       supports[underground ? 'sewer' : 'street'].push({
         x, y: (lower + Math.max(ROAD_Y, top)) / 2,
-        z: underground ? -3.6 : -2.9,
-        w: STEP_WIDTH + 0.025, h: height, d: underground ? 2.6 : 3.8,
+        z: underground ? -3.8 : -3.2,
+        w: STEP_WIDTH + 0.025, h: height, d: underground ? 2.5 : 3.5,
       });
       const topGroup = underground ? 'sewer' : segment.type === 'stairs' ? 'stair' : 'road';
-      tops[topGroup].push({ x, y: top - 0.0375, z: 3.15, w: STEP_WIDTH + 0.04, h: 0.075, d: 5.84 });
+      // Keep the walk surface behind the runner in depth. Its back edge still
+      // reads as a continuous path but its front face can never occlude the sprite/model.
+      tops[topGroup].push({ x, y: top - 0.0375, z: -0.25, w: STEP_WIDTH + 0.04, h: 0.075, d: 4.6 });
       if (segment.type === 'stairs') edges.push({ x, y: top + 0.005, z: 0.2, w: STEP_WIDTH + 0.04, h: 0.045, d: 0.08 });
       if (underground && segment.type === 'platform' && i % 4 === 1) {
-        edges.push({ x, y: top + 0.12, z: 0.18, w: 0.16, h: 0.08, d: 0.12 });
+        edges.push({ x, y: top + 0.12, z: -0.15, w: 0.16, h: 0.08, d: 0.12 });
       }
       surfaces.push({ start: cursor, end: cursor + STEP_WIDTH, height: top, type: segment.type, theme });
       cursor += STEP_WIDTH;
     }
   }
-  // Sparse, translucent ribs are drawn behind the runner. The near side and
-  // ceiling remain open so sewer architecture never hides the playable scene.
-  const sewerArch = new THREE.MeshStandardMaterial({ color: 0x39716d, roughness: 0.9, transparent: true, opacity: 0.2, depthWrite: false });
+  // Translucent tunnel ribs are on the far side of the player; there is no near
+  // wall or roof panel that can cover the runner at underground elevations.
+  const sewerArch = new THREE.MeshStandardMaterial({ color: 0x39716d, roughness: 0.9, transparent: true, opacity: 0.16, depthWrite: false });
   for (let i = 0; i < surfaces.length; i += 1) {
     const surface = surfaces[i];
     if (surface.theme !== 'sewer' || surface.type !== 'platform' || i % 12 !== 2) continue;
     const x = surface.start;
-    arches.push({ x, y: surface.height + 2.5, z: -4.4, w: 0.14, h: 5, d: 0.14 });
-    arches.push({ x, y: surface.height + 5.0, z: -3.2, w: 0.14, h: 0.14, d: 2.4 });
-    edges.push({ x, y: surface.height + 3.8, z: -2.8, w: 0.35, h: 0.11, d: 0.08 });
+    arches.push({ x, y: surface.height + 2.5, z: -4.6, w: 0.14, h: 5, d: 0.14 });
+    arches.push({ x, y: surface.height + 5.0, z: -4.0, w: 0.14, h: 0.14, d: 1.3 });
+    edges.push({ x, y: surface.height + 3.8, z: -3.8, w: 0.35, h: 0.11, d: 0.08 });
   }
   instancedBoxes(group, materials.stair, supports.street);
   instancedBoxes(group, materials.sewer, supports.sewer);
@@ -118,6 +141,7 @@ function createRoute(scene, startX) {
   instancedBoxes(group, materials.sewer, tops.sewer);
   instancedBoxes(group, materials.stairEdge, edges);
   instancedBoxes(group, sewerArch, arches);
+  instancedBoxes(group, materials.pit, pits);
   group.position.x = startX;
   scene.add(group);
   return { group, surfaces };
@@ -130,26 +154,23 @@ export function createWorld(scene) {
   scene.fog = new THREE.Fog(skyColor, 22, 65);
   scene.add(new THREE.HemisphereLight(0xb9d8ff, 0x22131a, 2));
   const moonLight = new THREE.DirectionalLight(0xb8d9ff, 2.3);
-  moonLight.position.set(-5, 12, 12);
-  scene.add(moonLight);
+  moonLight.position.set(-5, 12, 12); scene.add(moonLight);
   const sewerLight = new THREE.PointLight(0x35d5b0, 0, 24, 2);
-  sewerLight.position.set(-3, 0, 4);
-  scene.add(sewerLight);
+  sewerLight.position.set(-3, 0, 4); scene.add(sewerLight);
   const moon = new THREE.Mesh(new THREE.SphereGeometry(1.05, 32, 24), new THREE.MeshBasicMaterial({ color: 0xffdca1 }));
-  moon.position.set(7.4, 8.35, -10);
-  scene.add(moon);
+  moon.position.set(7.4, 8.35, -10); scene.add(moon);
   const halo = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.035, 8, 64), new THREE.MeshBasicMaterial({ color: 0xe9a75b, transparent: true, opacity: 0.45 }));
-  halo.position.copy(moon.position);
-  scene.add(halo);
+  halo.position.copy(moon.position); scene.add(halo);
   const starPositions = [];
   for (let i = 0; i < 145; i += 1) starPositions.push(-42 + Math.random() * 84, 3 + Math.random() * 12, -12);
   const starGeometry = new THREE.BufferGeometry();
   starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
   scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xd8e9ff, size: 0.075, transparent: true, opacity: 0.8 })));
 
-  box(scene, 800, 0.6, 12, materials.road, 300, -0.3, 0);
+  // The fallback road is a distant backing surface, not a foreground slab.
+  box(scene, 800, 0.6, 3.6, materials.road, 300, -0.3, -3.6);
   const laneMarkers = [];
-  for (let i = 0; i < 24; i += 1) laneMarkers.push(box(scene, 2.2, 0.08, 0.05, materials.white, -22 + i * 4.8, 0.23, 3.8));
+  for (let i = 0; i < 24; i += 1) laneMarkers.push(box(scene, 2.2, 0.08, 0.05, materials.white, -22 + i * 4.8, 0.23, -0.8));
   const buildings = [];
   const colors = [0x182338, 0x20243a, 0x25212b, 0x152a39];
   for (let i = 0; i < 14; i += 1) {
@@ -166,9 +187,7 @@ export function createWorld(scene) {
           -width / 2 + 0.58 + col * 1.05, 1.2 + row * 1.35, facadeZ);
       }
     }
-    group.position.x = -28 + i * 10;
-    scene.add(group);
-    buildings.push(group);
+    group.position.x = -28 + i * 10; scene.add(group); buildings.push(group);
   }
   const cloudGroups = [];
   const cloudMaterials = [];
@@ -178,16 +197,12 @@ export function createWorld(scene) {
     cloudMaterials.push(cloudMaterial);
     for (const [x, y, size] of [[0, 0, 1.1], [0.85, 0.08, 0.8], [-0.8, 0.04, 0.72], [0.25, 0.48, 0.68]]) {
       const puff = new THREE.Mesh(new THREE.SphereGeometry(size, 10, 8), cloudMaterial);
-      puff.position.set(x, y, 0);
-      cloud.add(puff);
+      puff.position.set(x, y, 0); cloud.add(puff);
     }
-    cloud.position.set(-30 + i * 13, CLOUD_LEVEL + 2.8, -7.5);
-    scene.add(cloud);
-    cloudGroups.push(cloud);
+    cloud.position.set(-30 + i * 13, CLOUD_LEVEL + 2.8, -7.5); scene.add(cloud); cloudGroups.push(cloud);
   }
   const routes = [];
   for (let i = 0; i < 4; i += 1) routes.push(createRoute(scene, 17 + i * ROUTE_SPACING));
-
   function terrainAt(worldX) {
     for (const route of routes) {
       const localX = worldX - route.group.position.x;
@@ -196,25 +211,18 @@ export function createWorld(scene) {
     return { height: ROAD_Y, type: 'road', theme: 'street' };
   }
   function update(delta, height, travel) {
-    for (const marker of laneMarkers) {
-      marker.position.x -= travel;
-      if (marker.position.x < -24) marker.position.x += 115.2;
-    }
-    for (const building of buildings) {
-      building.position.x -= travel * 0.23;
-      if (building.position.x < -32) building.position.x += 140;
-    }
-    // Fade clouds over a wide elevation band instead of toggling visibility at
-    // one threshold. Keeping them at a fixed world altitude makes the descent read naturally.
-    const fadeStart = CLOUD_LEVEL - 2.8;
-    const fadeEnd = CLOUD_LEVEL + 0.15;
+    for (const marker of laneMarkers) { marker.position.x -= travel; if (marker.position.x < -24) marker.position.x += 115.2; }
+    for (const building of buildings) { building.position.x -= travel * 0.23; if (building.position.x < -32) building.position.x += 140; }
+    // Fade cloud visibility gradually as the runner descends through a broad altitude band.
+    const fadeStart = CLOUD_LEVEL - 4.2;
+    const fadeEnd = CLOUD_LEVEL - 0.4;
     const t = THREE.MathUtils.clamp((height - fadeStart) / (fadeEnd - fadeStart), 0, 1);
     const cloudOpacity = t * t * (3 - 2 * t);
     for (let i = 0; i < cloudGroups.length; i += 1) {
       const cloud = cloudGroups[i];
       cloud.position.x -= travel * 0.16;
       if (cloud.position.x < -38) cloud.position.x += 117;
-      cloud.visible = cloudOpacity > 0.01;
+      cloud.visible = cloudOpacity > 0.005;
       cloudMaterials[i].opacity = cloudOpacity * 0.62;
     }
     for (const route of routes) {
