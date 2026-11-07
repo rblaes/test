@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
-import { createWorld, ROAD_Y, ROUTE_LENGTH, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js';
+import { createWorld, ROAD_Y, ROUTE_SPACING, CLOUD_LEVEL, SEWER_LEVEL } from './world.js';
 import { createRunner } from './runner.js';
-import { createHazards } from './hazards.js';
+import { createHazards } from './hazards.js?v=20260620-2';
 
 const game = document.querySelector('#game');
 const scoreElement = document.querySelector('#score');
@@ -29,6 +29,8 @@ game.prepend(renderer.domElement);
 
 const world = createWorld(scene);
 const { runner, leftArm, rightArm, leftLeg, rightLeg } = createRunner(scene);
+// Pass the exact scene instance to the hazards module. It must use this argument
+// for adding and removing its objects, never an implicit global named `scene`.
 const hazards = createHazards(scene);
 const obstacles = hazards.obstacles;
 const pickups = hazards.pickups;
@@ -191,8 +193,6 @@ function animate() {
     rightArm.rotation.z = ducking ? 1.05 : 0.28 + stride * 0.42;
     runner.children[0].rotation.z = ducking ? 0.18 : grounded ? Math.sin(time * 9) * 0.025 : -0.08;
 
-    // Track full elevation with an unchanged camera-to-runner offset. Thus the
-    // character remains in-frame in the sewer and at cloud height.
     const cameraY = CAMERA_FOCUS_OFFSET + (groundHeight - ROAD_Y);
     camera.position.y = THREE.MathUtils.damp(camera.position.y, cameraY, 8, delta);
     camera.lookAt(0, camera.position.y, 0);
