@@ -9,7 +9,6 @@ export const materials = {
   record: new THREE.MeshStandardMaterial({ color: 0xd8a64d, metalness: 0.55, roughness: 0.3, emissive: 0x4c2608 }),
   stair: mat(0x343f50, 0.88), stairTop: mat(0x596273, 0.78), stairEdge: mat(0xb18a5e, 0.62),
   rail: mat(0x252d39, 0.45, 0.55), sewer: mat(0x26494a, 0.75, 0.18), teal: mat(0x38d6bd, 0.35, 0.1),
-  // Sewer structure remains behind gameplay and translucent for clear sightlines.
   sewerSupport: new THREE.MeshStandardMaterial({ color: 0x39716d, roughness: 0.9, transparent: true, opacity: 0.2, depthWrite: false }),
   sewerDeck: new THREE.MeshStandardMaterial({ color: 0x26494a, roughness: 0.75, metalness: 0.18, transparent: true, opacity: 0.2, depthWrite: false }),
   pit: new THREE.MeshStandardMaterial({ color: 0x020609, roughness: 1 }),
@@ -28,11 +27,11 @@ export const ROAD_Y = 0.2;
 export const STEP_WIDTH = 0.72;
 export const STEP_RISE = 0.3;
 const UP_FLIGHTS = 6;
-// Continue the descent through several underground floors instead of ending near -1.
 const DOWN_FLIGHTS = 10;
 const UP_STEPS = 3;
 const DOWN_STEPS = 4;
 const PLATFORM = 32;
+const GAP_STEPS = 5;
 const pattern = [{ type: 'platform', count: PLATFORM, theme: 'street' }];
 for (let i = 0; i < UP_FLIGHTS; i += 1) {
   pattern.push({ type: 'stairs', count: UP_STEPS, direction: 1 });
@@ -44,8 +43,8 @@ for (let i = 0; i < DOWN_FLIGHTS; i += 1) {
   const level = UP_FLIGHTS * UP_STEPS * STEP_RISE - (i + 1) * DOWN_STEPS * STEP_RISE;
   const theme = level < 0 ? 'sewer' : level >= 4.2 ? 'clouds' : level >= 2.1 ? 'rooftop' : 'street';
   if (theme === 'sewer') {
-    pattern.push({ type: 'platform', count: 13, theme }, { type: 'hole', count: 3, theme },
-      { type: 'platform', count: 13, theme }, { type: 'hole', count: 3, theme }, { type: 'platform', count: 16, theme });
+    pattern.push({ type: 'platform', count: 13, theme }, { type: 'hole', count: GAP_STEPS, theme },
+      { type: 'platform', count: 13, theme }, { type: 'hole', count: GAP_STEPS, theme }, { type: 'platform', count: 16, theme });
   } else pattern.push({ type: 'platform', count: PLATFORM, theme });
 }
 export const ROUTE_LENGTH = pattern.reduce((sum, item) => sum + item.count * STEP_WIDTH, 0);
@@ -83,18 +82,13 @@ function makeRoute(scene, startX) {
       const lower = Math.min(ROAD_Y, top), fillH = Math.max(0.06, Math.abs(top - ROAD_Y));
       const underground = theme === 'sewer';
       if (underground) {
-        // Sparse piers keep each descending sewer level open and the action visible.
         if (segment.type === 'platform' && i % 4 === 1) {
-          supportSewer.push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2,
-            z: -4.25, w: 0.2, h: fillH, d: 0.42 });
+          supportSewer.push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2, z: -4.25, w: 0.2, h: fillH, d: 0.42 });
         }
       } else {
-        supportStreet.push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2,
-          z: -3.5, w: STEP_WIDTH + 0.025, h: fillH, d: 2.8 });
+        supportStreet.push({ x, y: (lower + Math.max(ROAD_Y, top)) / 2, z: -3.5, w: STEP_WIDTH + 0.025, h: fillH, d: 2.8 });
       }
       const routeTop = underground ? topSewer : segment.type === 'stairs' ? topStairs : topRoad;
-      // Sewer deck is behind the runner with low opacity; it marks the route without
-      // becoming a foreground screen that hides the player or hazards.
       const depth = underground ? 1.2 : 4.6;
       const centerZ = underground ? -1.4 : -0.25;
       routeTop.push({ x, y: top - 0.0375, z: centerZ, w: STEP_WIDTH + 0.04, h: 0.075, d: depth });
@@ -174,8 +168,6 @@ export function createWorld(scene) {
       g.visible = fade > 0.005; cloudMaterials[i].opacity = fade * 0.62;
     }
     for (const route of routes) { route.group.position.x -= travel; if (route.group.position.x + ROUTE_LENGTH < -5.3) route.group.position.x += ROUTE_SPACING * routes.length; }
-    // Fade into the sewer once below street level, and keep the moving light centered
-    // over the player even on the new, much lower floors.
     const theme = height < ROAD_Y - 0.05 ? 'sewer' : height >= CLOUD_LEVEL - 0.5 ? 'clouds' : height >= 2.2 ? 'rooftop' : 'street';
     scene.background.lerp(theme === 'sewer' ? sewerSky : sky, Math.min(1, delta * 1.5)); scene.fog.color.copy(scene.background);
     scene.fog.near = theme === 'sewer' ? 16 : 22; scene.fog.far = theme === 'sewer' ? 52 : 65;
